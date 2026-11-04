@@ -1,335 +1,146 @@
-# AppLovin Max MCP Server
+# AppLovin MAX MCP Server
 
-A Model Context Protocol (MCP) server that provides LLM clients like Claude with access to AppLovin Max advertising platform analytics and reporting capabilities.
+A [Model Context Protocol](https://modelcontextprotocol.io) server that gives AI agents
+(Claude and any other MCP client) read access to AppLovin MAX mediation analytics:
+aggregated revenue reporting and install-cohort reports.
 
----
+> **Status: Milestone 1 of the [roadmap](docs/roadmap.md).** The read-only foundation is
+> hardened: input validation, timeouts, retries, client-side rate limiting, capped responses,
+> secret redaction, structured logs, tests and CI. Configuration management (ad units,
+> waterfalls, floors, experiments) and write operations are planned for later milestones.
 
-**⚠️ IMPORTANT: PROOF OF CONCEPT ONLY**
+## Tools
 
-This is a proof-of-concept throwaway project created for demonstration and experimentation purposes. It is **NOT production-ready** and should **NOT be used in production environments** without significant additional work.
+Both tools are read-only (`readOnlyHint: true`) and return JSON by default:
 
-**Known Limitations:**
-- No comprehensive error handling or recovery mechanisms
-- No rate limiting or request throttling
-- No input validation beyond basic parameter checks
-- No logging or monitoring capabilities
-- No unit tests or integration tests
-- No security audits performed
-- No performance optimization or scalability considerations
-- API keys transmitted in query parameters (consider more secure methods for production)
-
-**Use at your own risk.** This code is provided as-is with no warranties. See the LICENSE file for details.
-
----
-
-## Overview
-
-This Go-based MCP server exposes AppLovin Max API functionality through standardized tools, enabling AI assistants to query mobile ad revenue data, analyze user cohorts, and generate insights from your AppLovin monetization metrics.
-
-## Features
-
-- **Revenue Reporting**: Access aggregated mediation statistics including impressions, revenue, eCPM, and fill rates
-- **Cohort Analysis**: Track user lifecycle metrics segmented by installation date
-- **Flexible Filtering**: Filter by application, country, platform, ad type, and more
-- **Multiple Data Views**: Choose between revenue, impression, or session-based cohort analysis
-- **Time-Series Tracking**: Monitor how metrics evolve over time (up to 45 days post-install)
-
-## Prerequisites
-
-- Go 1.25.4 or later
-- AppLovin Max account with API access
-- AppLovin API key
-
-## Installation
-
-1. Clone the repository:
-```bash
-git clone <repository-url>
-cd Applovin-Max-MCP
+```json
+{ "rows_returned": 500, "rows_total": 1840, "truncated": true, "hint": "Showing 500 of 1840 rows. ...", "rows": [ ... ] }
 ```
 
-2. Install dependencies:
+### `revenue_report`
+
+Aggregated MAX performance from `GET /maxReport`.
+
+| Argument | Notes |
+|---|---|
+| `start`, `end` (required) | `YYYY-MM-DD`, inclusive, `start <= end` |
+| `columns` | Dimensions: `day, hour, application, package_name, ad_format, country, platform, network, network_placement, max_placement, max_ad_unit_id, custom_network_name, ad_unit_waterfall_name, device_type, store_id, has_idfa, max_ad_unit_test`. Metrics: `impressions, responses, requests, attempts, estimated_revenue, ecpm, fill_rate`. Default: `day, application, impressions, estimated_revenue, ecpm` |
+| `format` | `json` (default) or `csv` |
+| `filter_application`, `filter_package_name`, `filter_ad_type`, `filter_country` (ISO alpha-2), `filter_platform`, `filter_network`, `filter_zone` | Optional filters |
+| `sort_day`, `sort_hour`, `sort_estimated_revenue` | `ASC` / `DESC` |
+| `limit`, `offset`, `not_zero` | Paging and zero-row suppression |
+
+### `cohort_request`
+
+Install-date cohorts from `/maxCohort` (revenue), `/maxCohort/imp` (impression) and
+`/maxCohort/session` (session).
+
+| Argument | Notes |
+|---|---|
+| `cohort_type` | `revenue` (default), `impression`, `session` |
+| `start`, `end` (required) | Install dates, at most 45 days apart |
+| `columns` | Base: `day, installs, country, platform, package_name, application`. Metrics — revenue: `ads_rpi, iap_rpi, pub_revenue, inter_rpi, banner_rpi, reward_rpi`; impression: `imp, imp_per_user, banner_imp, inter_imp, reward_imp`; session: `retention, sessions, session_length, daily_usage` |
+| `cohort_interval` | Required when metrics are requested. One of `0–7, 10, 14, 18, 21, 24, 27, 30, 45`. Metrics expand to every AppLovin-supported day up to the interval, inclusive: `ads_rpi` + `14` → `ads_rpi_0 … ads_rpi_7, ads_rpi_10, ads_rpi_14` |
+| filters, sorting, paging | `filter_country`, `filter_package_name`, `filter_platform`, `filter_application`, `sort_day`, `sort_installs`, `limit`, `offset`, `not_zero` |
+
+Metrics must belong to the selected `cohort_type`; mixing types returns a validation error
+that names the right type.
+
+## Setup
+
+Requirements: Node.js 20+ and an AppLovin MAX **Report Key** (MAX dashboard → Account → Keys).
+
 ```bash
-go mod download
+npm ci
+npm run build
 ```
 
-3. Build the server:
-```bash
-go build -o bootstrap cmd/main.go
-```
-
-## Configuration
-
-Set your AppLovin API key as an environment variable:
-
-```bash
-export APPLOVIN_API_KEY="your_api_key_here"
-```
-
-## Usage
-
-### Starting the Server
-
-The MCP server communicates via stdio (standard input/output):
-
-```bash
-./bootstrap
-```
-
-### Integrating with Claude Desktop
-
-Add the following configuration to your Claude Desktop config file:
-
-**macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
-**Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+### Claude Desktop / Claude Code
 
 ```json
 {
   "mcpServers": {
     "applovin-max": {
-      "command": "/path/to/Applovin-Max-MCP/bootstrap",
-      "env": {
-        "APPLOVIN_API_KEY": "your_api_key_here"
-      }
+      "command": "node",
+      "args": ["/absolute/path/to/Applovin-Max-Analytics-MCP-Server/dist/index.js"],
+      "env": { "APPLOVIN_REPORT_KEY": "your_report_key" }
     }
   }
 }
 ```
 
-## Available Tools
+### Configuration
 
-### 1. Revenue Report (`revenue_report`)
+| Variable | Default | Purpose |
+|---|---|---|
+| `APPLOVIN_REPORT_KEY` | — (required) | Report Key. `APPLOVIN_API_KEY` is accepted as a deprecated alias |
+| `APPLOVIN_HTTP_TIMEOUT_MS` | `60000` | Per-attempt timeout |
+| `APPLOVIN_MAX_RETRIES` | `2` | Retries for network errors, timeouts, 429 and 5xx (exponential backoff, honours `Retry-After`) |
+| `APPLOVIN_REPORT_RPM` | `30` | Client-side cap on reporting calls per minute |
+| `MCP_MAX_ROWS` | `500` | Max rows returned to the agent per call |
+| `MCP_MAX_RESPONSE_BYTES` | `200000` | Max size of a tool result |
+| `LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error`, `silent` |
+| `APPLOVIN_REPORT_BASE_URL` | `https://r.applovin.com` | Override for testing (HTTPS only) |
 
-Retrieves aggregated mediation statistics from AppLovin Max.
+The server fails fast at startup if the configuration is invalid.
 
-#### Required Parameters
+## Security
 
-- `start` (string): Start date in YYYY-MM-DD format
-- `end` (string): End date in YYYY-MM-DD format
-- `format` (string): Output format - `json` or `csv`
-
-#### Optional Parameters
-
-**Columns** (array, default: `["day", "application"]`):
-- **Dimensions**: `day`, `hour`, `application`, `package_name`, `ad_format`, `country`, `platform`, `network`, `network_placement`, `max_placement`, `max_ad_unit_id`, `custom_network_name`, `ad_unit_waterfall_name`, `device_type`, `store_id`, `has_idfa`, `max_ad_unit_test`
-- **Metrics**: `impressions`, `responses`, `requests`, `attempts`, `estimated_revenue`, `ecpm`, `fill_rate`
-
-**Filters**:
-- `filter_application`: Filter by application name
-- `filter_package_name`: Filter by package name
-- `filter_ad_type`: Filter by ad type (e.g., banner, inter, rewarded)
-- `filter_country`: Filter by two-letter ISO country code
-- `filter_platform`: Filter by platform (android, ios)
-- `filter_network`: Filter by network name
-- `filter_zone`: Filter by zone
-
-**Sorting**:
-- `sort_day`: Sort by day (ASC/DESC)
-- `sort_hour`: Sort by hour (ASC/DESC)
-- `sort_estimated_revenue`: Sort by estimated revenue (ASC/DESC)
-
-**Pagination**:
-- `limit`: Limit number of results
-- `offset`: Skip first N results
-
-**Other**:
-- `not_zero` (boolean): Exclude rows where all metrics are zero
-
-#### Example Usage
-
-```
-Get revenue data for the last 7 days by country
-```
-
-Claude will use:
-```json
-{
-  "start": "2025-11-25",
-  "end": "2025-12-02",
-  "format": "json",
-  "columns": ["day", "country", "estimated_revenue", "impressions", "ecpm"]
-}
-```
-
-### 2. Cohort Request (`cohort_request`)
-
-Analyzes user cohort performance segmented by installation date.
-
-#### Required Parameters
-
-- `start` (string): Start date (installation date) in YYYY-MM-DD format
-- `end` (string): End date in YYYY-MM-DD format (max 45-day range)
-- `format` (string): Output format - `json` or `csv`
-
-#### Optional Parameters
-
-**Cohort Type** (string, default: `revenue`):
-- `revenue`: Ad revenue and IAP metrics
-- `impression`: Ad impression data
-- `session`: Retention and session metrics
-
-**Columns** (array, default: `["day", "installs"]`):
-- **Dimensions**: `day`, `installs`, `country`, `platform`, `package_name`, `application`
-- **Revenue Metrics**: `ads_rpi`, `iap_rpi`, `pub_revenue`, `inter_rpi`, `banner_rpi`, `reward_rpi`
-- **Impression Metrics**: `imp`, `imp_per_user`, `banner_imp`, `inter_imp`, `reward_imp`
-- **Session Metrics**: `retention`, `sessions`, `session_length`, `daily_usage`
-
-**Cohort Interval** (string, required for time-based metrics):
-- Valid values: `0`, `1`, `2`, `3`, `4`, `5`, `6`, `7`, `10`, `14`, `18`, `21`, `24`, `27`, `30`, `45`
-- Specifies days post-install to track (e.g., `7` returns day 0-7 metrics)
-
-**Filters**:
-- `filter_country`: Two-letter ISO country code
-- `filter_package_name`: App package name
-- `filter_platform`: Platform (android, ios)
-- `filter_application`: Application name
-
-**Sorting**:
-- `sort_day`: Sort by installation day (ASC/DESC)
-- `sort_installs`: Sort by number of installs (ASC/DESC)
-
-**Pagination**:
-- `limit`: Limit number of results
-- `offset`: Skip first N results
-
-**Other**:
-- `not_zero` (boolean): Exclude rows where all metrics are zero
-
-#### Example Usage
-
-```
-Show me the 7-day revenue per install for users who installed last week
-```
-
-Claude will use:
-```json
-{
-  "cohort_type": "revenue",
-  "start": "2025-11-25",
-  "end": "2025-11-28",
-  "format": "json",
-  "columns": ["day", "installs", "ads_rpi"],
-  "cohort_interval": "7"
-}
-```
-
-This automatically expands to track `ads_rpi_0` through `ads_rpi_7` for each install cohort.
-
-## Project Structure
-
-```
-Applovin-Max-MCP/
-├── cmd/
-│   └── main.go              # Application entry point
-├── internal/
-│   ├── capability.go        # Capability abstraction layer
-│   └── toolkit.go           # Revenue and cohort tool implementations
-├── go.mod                   # Go module definition
-├── go.sum                   # Dependency checksums
-├── .gitignore              # Git ignore rules
-└── README.md               # This file
-```
+- AppLovin's reporting API only accepts the key as a query parameter. The server adds it at
+  the last moment and passes every error message, response snippet and log line through a
+  redactor, so the key never reaches the agent or the logs. Tests and the CI smoke test
+  check this.
+- Logs are JSON lines on **stderr**. stdout is reserved for the MCP protocol.
+- Use a dedicated Report Key per deployment so it can be rotated independently.
 
 ## Development
 
-### Building
-
 ```bash
-go build -o bootstrap cmd/main.go
+npm run check        # lint + typecheck + tests with coverage gate + build + stdio smoke test
+npm test             # unit and in-memory MCP integration tests
+npm run smoke        # spawns dist/index.js over stdio with real fetch (no AppLovin account needed)
 ```
 
-### Dependencies
+```
+src/
+  index.ts              process entry: config, stdio transport, shutdown
+  server.ts             wiring (runtime) and MCP server factory
+  config.ts             env parsing and validation
+  logger.ts             JSON-lines logger with redaction
+  shaping.ts            row/byte caps for tool results
+  version.ts
+  applovin/             AppLovin API layer, no MCP types
+    httpClient.ts       timeouts, cancellation, retries, rate limiting
+    rateLimiter.ts      token bucket
+    reporting.ts        report/cohort domain, validation, query builders
+    redact.ts, errors.ts
+  tools/                MCP tool definitions (schemas, descriptions, result mapping)
+test/                   vitest suites, including MCP client ↔ server integration
+```
 
-Key dependencies:
-- `github.com/mark3labs/mcp-go` v0.43.0 - MCP protocol implementation
-- `github.com/google/uuid` - UUID generation
-- `github.com/invopop/jsonschema` - JSON schema handling
+`.npmrc` sets `legacy-peer-deps=true` to work around an npm 10 resolver crash with vitest's
+optional peers. `vite` is declared explicitly for that reason.
 
-See `go.mod` for complete dependency list.
+### Assumptions to verify against a live account
 
-### API Endpoints
+These come from the original POC and AppLovin's public docs; the M1 smoke test against a real
+account should confirm them:
 
-The server interacts with the following AppLovin Max API endpoints:
+- `/maxReport` and `/maxCohort*` JSON responses carry rows in `results` (bare arrays are also handled).
+- Cohort metric column names and the supported day suffixes.
+- The 45-day maximum range for cohort requests.
 
-- **Revenue Report**: `https://r.applovin.com/maxReport`
-- **Cohort (Revenue)**: `https://r.applovin.com/maxCohort`
-- **Cohort (Impression)**: `https://r.applovin.com/maxCohort/imp`
-- **Cohort (Session)**: `https://r.applovin.com/maxCohort/session`
+## Changes from the Go proof of concept
 
-## Example Queries
-
-Once integrated with Claude, you can ask natural language questions like:
-
-- "How much revenue did we make in the last 7 days?"
-- "Show me the top 5 countries by revenue this month"
-- "What's our eCPM trend over the past 30 days?"
-- "Analyze retention rates for users who installed last week"
-- "Compare iOS vs Android revenue performance"
-- "Show me rewarded video impressions by application"
-
-## Error Handling
-
-The server provides detailed error messages for:
-- Missing required parameters
-- Invalid date formats or ranges
-- API authentication failures
-- HTTP request failures
-- Invalid cohort intervals
-
-## Security Notes
-
-**⚠️ This is a POC with basic security only:**
-
-- Store your API key securely (use environment variables, never commit to version control)
-- The API key is transmitted via HTTPS query parameters to AppLovin's secure endpoints
-- Ensure proper access controls on the `bootstrap` binary and configuration files
-- **For production use**: Implement proper secrets management, request authentication, rate limiting, and audit logging
-
-## Production Readiness Checklist
-
-If you want to use this project as a foundation for production, consider implementing:
-
-- [ ] Comprehensive error handling and recovery
-- [ ] Request rate limiting and throttling
-- [ ] Input validation and sanitization
-- [ ] Structured logging (JSON format with log levels)
-- [ ] Monitoring and alerting (metrics, health checks)
-- [ ] Unit tests and integration tests (aim for >80% coverage)
-- [ ] Security audit and penetration testing
-- [ ] Secure credential management (HashiCorp Vault, AWS Secrets Manager, etc.)
-- [ ] Request timeout handling and circuit breakers
-- [ ] API response caching where appropriate
-- [ ] Graceful shutdown and cleanup
-- [ ] Documentation for deployment and operations
-- [ ] CI/CD pipeline with automated testing
-- [ ] Performance profiling and optimization
-- [ ] Horizontal scalability considerations
-
-## Version
-
-Current version: **1.0.0** (Proof of Concept)
+- Rewritten in TypeScript on the official MCP SDK (v2).
+- `APPLOVIN_API_KEY` → `APPLOVIN_REPORT_KEY` (old name still accepted).
+- `format` is optional (defaults to `json`), and JSON results are wrapped in a row-count envelope.
+- `revenue_report` default columns now include metrics. The POC declared a default but failed
+  when `columns` was omitted.
+- `cohort_interval` expands only to day suffixes AppLovin supports, inclusive. The POC
+  generated every integer (for example `ads_rpi_8`) and accepted invalid intervals such as `8`.
+- `imp` and `retention` are now expanded like the other cohort metrics.
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-**Summary:** You are free to use, modify, and distribute this software for any purpose, including commercial use, with no warranty provided.
-
-## Contributing
-
-Contributions are welcome! This is an open-source POC project. Feel free to:
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-Please ensure any contributions maintain the spirit of simplicity for a POC project.
-
-## Support
-
-For issues related to:
-- **This MCP server**: Open an issue in this repository
-- **AppLovin Max API**: Contact AppLovin support
-- **Model Context Protocol**: Visit [modelcontextprotocol.io](https://modelcontextprotocol.io)
+MIT — see [LICENSE](LICENSE).

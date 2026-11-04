@@ -31,3 +31,9 @@ go.work.sum
 # .idea/
 # .vscode/
 bootstrap
+
+# Node / TypeScript
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
