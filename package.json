@@ -1,0 +1,48 @@
+{
+  "name": "applovin-max-mcp",
+  "version": "0.7.0",
+  "description": "MCP server that gives AI agents access to AppLovin MAX reporting and cohort analytics.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "applovin-max-mcp": "dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check .",
+    "format": "biome check --write .",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "check": "npm run lint && npm run typecheck && npm run test:coverage && npm run build && npm run smoke",
+    "smoke": "node scripts/smoke.mjs",
+    "live-check": "npm run build && node scripts/live-check.mjs",
+    "evals": "npm run build && node scripts/run-evals.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/server": "2.3.1",
+    "@opentelemetry/api": "1.10.0",
+    "jose": "6.2.13",
+    "pg": "8.23.1",
+    "prom-client": "15.1.3",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@anthropic-ai/sdk": "0.137.0",
+    "@biomejs/biome": "2.5.15",
+    "@modelcontextprotocol/client": "2.3.1",
+    "@types/node": "22.20.5",
+    "@types/pg": "8.23.1",
+    "@vitest/coverage-v8": "5.0.5",
+    "typescript": "7.0.2",
+    "vite": "8.3.4",
+    "vitest": "5.0.5"
+  }
+}

@@ -1,0 +1,26 @@
+# Example ArgoCD Application. Adjust repoURL, revision, namespace and values.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: applovin-max-mcp
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/faocampo/Applovin-Max-Analytics-MCP-Server
+    targetRevision: main
+    path: deploy/helm/applovin-max-mcp
+    helm:
+      valuesObject:
+        config:
+          publicUrl: https://mcp.example.com/mcp
+          auth:
+            issuer: https://auth.example.com
+        credentials:
+          existingSecret: applovin-max-mcp-credentials
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: applovin-max-mcp
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [CreateNamespace=true]

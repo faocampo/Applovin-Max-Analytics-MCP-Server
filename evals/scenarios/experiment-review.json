@@ -1,0 +1,294 @@
+{
+  "id": "experiment-review",
+  "description": "Evaluate a winning experiment, recommend promotion and prepare (not apply) the promotion plan.",
+  "prompt": "The experiment on ad unit au1 started on 2026-10-01 and ran until 2026-10-10. Should we promote it? If so, prepare it but don't apply anything.",
+  "env": {
+    "APPLOVIN_ENABLE_WRITES": "true",
+    "APPLOVIN_WRITE_ALLOWLIST": "au1"
+  },
+  "fixtures": [
+    {
+      "match": "o.applovin.com/mediation/v1/ad_unit/au1",
+      "body": {
+        "id": "au1",
+        "name": "Rewarded iOS",
+        "platform": "ios",
+        "ad_format": "REWARD",
+        "package_name": "com.game",
+        "disabled": false,
+        "has_active_experiment": true,
+        "ad_network_settings": [
+          {
+            "ADMOB_BIDDING": {}
+          },
+          {
+            "UNITY_BIDDING": {}
+          },
+          {
+            "MINTEGRAL_BIDDING": {}
+          }
+        ],
+        "disabled_ad_network_settings": [],
+        "bid_floors": [
+          {
+            "country": "US",
+            "cpm": 12
+          },
+          {
+            "country": "JP",
+            "cpm": 9
+          }
+        ],
+        "frequency_capping_settings": {
+          "per_session": 4
+        },
+        "segments": []
+      }
+    },
+    {
+      "match": "o.applovin.com/mediation/v1/ad_unit_experiment/au1",
+      "body": {
+        "id": "au1",
+        "bid_floors": [
+          {
+            "country": "US",
+            "cpm": 13
+          },
+          {
+            "country": "JP",
+            "cpm": 9
+          }
+        ],
+        "frequency_capping_settings": {
+          "per_session": 4
+        },
+        "ad_network_settings": [
+          {
+            "ADMOB_BIDDING": {}
+          },
+          {
+            "UNITY_BIDDING": {}
+          },
+          {
+            "MINTEGRAL_BIDDING": {}
+          }
+        ]
+      }
+    },
+    {
+      "match": "r.applovin.com/maxReport",
+      "body": {
+        "code": 200,
+        "results": [
+          {
+            "day": "2026-10-01",
+            "max_ad_unit_id": "au1",
+            "ad_unit_waterfall_name": "Default Waterfall",
+            "requests": 50000,
+            "attempts": 150000,
+            "responses": 75000,
+            "impressions": 40000,
+            "estimated_revenue": "515.00"
+          },
+          {
+            "day": "2026-10-01",
+            "max_ad_unit_id": "au1",
+            "ad_unit_waterfall_name": "Experiment Waterfall",
+            "requests": 50000,
+            "attempts": 150000,
+            "responses": 75000,
+            "impressions": 40000,
+            "estimated_revenue": "557.50"
+          },
+          {
+            "day": "2026-10-02",
+            "max_ad_unit_id": "au1",
+            "ad_unit_waterfall_name": "Default Waterfall",
+            "requests": 50000,
+            "attempts": 150000,
+            "responses": 75000,
+            "impressions": 40000,
+            "estimated_revenue": "490.00"
+          },
+          {
+            "day": "2026-10-02",
+            "max_ad_unit_id": "au1",
+            "ad_unit_waterfall_name": "Experiment Waterfall",
+            "requests": 50000,
+            "attempts": 150000,
+            "responses": 75000,
+            "impressions": 40000,
+            "estimated_revenue": "545.00"
+          },
+          {
+            "day": "2026-10-03",
+            "max_ad_unit_id": "au1",
+            "ad_unit_waterfall_name": "Default Waterfall",
+            "requests": 50000,
+            "attempts": 150000,
+            "responses": 75000,
+            "impressions": 40000,
+            "estimated_revenue": "505.00"
+          },
+          {
+            "day": "2026-10-03",
+            "max_ad_unit_id": "au1",
+            "ad_unit_waterfall_name": "Experiment Waterfall",
+            "requests": 50000,
+            "attempts": 150000,
+            "responses": 75000,
+            "impressions": 40000,
+            "estimated_revenue": "552.50"
+          },
+          {
+            "day": "2026-10-04",
+            "max_ad_unit_id": "au1",
+            "ad_unit_waterfall_name": "Default Waterfall",
+            "requests": 50000,
+            "attempts": 150000,
+            "responses": 75000,
+            "impressions": 40000,
+            "estimated_revenue": "495.00"
+          },
+          {
+            "day": "2026-10-04",
+            "max_ad_unit_id": "au1",
+            "ad_unit_waterfall_name": "Experiment Waterfall",
+            "requests": 50000,
+            "attempts": 150000,
+            "responses": 75000,
+            "impressions": 40000,
+            "estimated_revenue": "547.50"
+          },
+          {
+            "day": "2026-10-05",
+            "max_ad_unit_id": "au1",
+            "ad_unit_waterfall_name": "Default Waterfall",
+            "requests": 50000,
+            "attempts": 150000,
+            "responses": 75000,
+            "impressions": 40000,
+            "estimated_revenue": "512.50"
+          },
+          {
+            "day": "2026-10-05",
+            "max_ad_unit_id": "au1",
+            "ad_unit_waterfall_name": "Experiment Waterfall",
+            "requests": 50000,
+            "attempts": 150000,
+            "responses": 75000,
+            "impressions": 40000,
+            "estimated_revenue": "556.25"
+          },
+          {
+            "day": "2026-10-06",
+            "max_ad_unit_id": "au1",
+            "ad_unit_waterfall_name": "Default Waterfall",
+            "requests": 50000,
+            "attempts": 150000,
+            "responses": 75000,
+            "impressions": 40000,
+            "estimated_revenue": "485.00"
+          },
+          {
+            "day": "2026-10-06",
+            "max_ad_unit_id": "au1",
+            "ad_unit_waterfall_name": "Experiment Waterfall",
+            "requests": 50000,
+            "attempts": 150000,
+            "responses": 75000,
+            "impressions": 40000,
+            "estimated_revenue": "542.50"
+          },
+          {
+            "day": "2026-10-07",
+            "max_ad_unit_id": "au1",
+            "ad_unit_waterfall_name": "Default Waterfall",
+            "requests": 50000,
+            "attempts": 150000,
+            "responses": 75000,
+            "impressions": 40000,
+            "estimated_revenue": "502.50"
+          },
+          {
+            "day": "2026-10-07",
+            "max_ad_unit_id": "au1",
+            "ad_unit_waterfall_name": "Experiment Waterfall",
+            "requests": 50000,
+            "attempts": 150000,
+            "responses": 75000,
+            "impressions": 40000,
+            "estimated_revenue": "551.25"
+          },
+          {
+            "day": "2026-10-08",
+            "max_ad_unit_id": "au1",
+            "ad_unit_waterfall_name": "Default Waterfall",
+            "requests": 50000,
+            "attempts": 150000,
+            "responses": 75000,
+            "impressions": 40000,
+            "estimated_revenue": "507.50"
+          },
+          {
+            "day": "2026-10-08",
+            "max_ad_unit_id": "au1",
+            "ad_unit_waterfall_name": "Experiment Waterfall",
+            "requests": 50000,
+            "attempts": 150000,
+            "responses": 75000,
+            "impressions": 40000,
+            "estimated_revenue": "553.75"
+          },
+          {
+            "day": "2026-10-09",
+            "max_ad_unit_id": "au1",
+            "ad_unit_waterfall_name": "Default Waterfall",
+            "requests": 50000,
+            "attempts": 150000,
+            "responses": 75000,
+            "impressions": 40000,
+            "estimated_revenue": "497.50"
+          },
+          {
+            "day": "2026-10-09",
+            "max_ad_unit_id": "au1",
+            "ad_unit_waterfall_name": "Experiment Waterfall",
+            "requests": 50000,
+            "attempts": 150000,
+            "responses": 75000,
+            "impressions": 40000,
+            "estimated_revenue": "548.75"
+          },
+          {
+            "day": "2026-10-10",
+            "max_ad_unit_id": "au1",
+            "ad_unit_waterfall_name": "Default Waterfall",
+            "requests": 50000,
+            "attempts": 150000,
+            "responses": 75000,
+            "impressions": 40000,
+            "estimated_revenue": "510.00"
+          },
+          {
+            "day": "2026-10-10",
+            "max_ad_unit_id": "au1",
+            "ad_unit_waterfall_name": "Experiment Waterfall",
+            "requests": 50000,
+            "attempts": 150000,
+            "responses": 75000,
+            "impressions": 40000,
+            "estimated_revenue": "555.00"
+          }
+        ]
+      }
+    }
+  ],
+  "expect": {
+    "must_call": ["evaluate_experiment", "plan_experiment_promotion"],
+    "must_not_call": ["apply_change"],
+    "plans_must_be_allowed": true,
+    "max_tool_calls": 6,
+    "answer_includes": ["promot"]
+  }
+}

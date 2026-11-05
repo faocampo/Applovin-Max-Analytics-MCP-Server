@@ -1,0 +1,13 @@
+node_modules
+dist
+coverage
+.git
+.github
+test
+scripts
+deploy
+docs
+*.md
+.env
+live-check-report.json
+*.jsonl
