@@ -3,7 +3,6 @@ import {
   bearerAuthChallengeResponse,
   createMcpHandler,
   getOAuthProtectedResourceMetadataUrl,
-  hostHeaderValidationResponse,
   type McpHttpHandler,
   type OAuthTokenVerifier,
   verifyBearerToken,
@@ -44,6 +43,40 @@ interface TenantEntry {
   fingerprint: string;
   runtime: Runtime;
   handlers: Map<string, McpHttpHandler>;
+}
+
+/** Calls `release` once the response body is fully read, cancelled or fails (or at once if there is none). */
+export function holdUntilBodyEnds(response: Response, release: () => void): Response {
+  if (!response.body) {
+    release();
+    return response;
+  }
+  const reader = response.body.getReader();
+  const body = new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      try {
+        const { done, value } = await reader.read();
+        if (done) {
+          release();
+          controller.close();
+        } else {
+          controller.enqueue(value);
+        }
+      } catch (err) {
+        release();
+        controller.error(err);
+      }
+    },
+    cancel(reason) {
+      release();
+      return reader.cancel(reason);
+    },
+  });
+  return new Response(body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers,
+  });
 }
 
 const json = (status: number, body: unknown, headers: Record<string, string> = {}) =>
@@ -111,8 +144,11 @@ export function createHttpApp(options: HttpAppOptions): HttpApp {
   }
 
   async function serveMcp(request: Request): Promise<Response> {
-    const hostRejected = hostHeaderValidationResponse(request, allowedHosts);
-    if (hostRejected) return hostRejected;
+    // DNS-rebinding protection: only our own hostnames may reach the MCP endpoint.
+    const host = (request.headers.get('host') ?? new URL(request.url).host).replace(/:\d+$/, '');
+    if (!allowedHosts.includes(host)) {
+      return json(403, { error: 'forbidden', error_description: 'Host not allowed.' });
+    }
 
     let auth: AuthInfo;
     if (options.verifier) {
@@ -160,11 +196,21 @@ export function createHttpApp(options: HttpAppOptions): HttpApp {
     }
     inFlight.set(tenant, current + 1);
     metrics.inFlight(tenant, 1);
-    try {
-      return await handlerFor(entry, scopeSet(auth)).fetch(request, { authInfo: auth });
-    } finally {
+    let released = false;
+    const release = () => {
+      if (released) return;
+      released = true;
       inFlight.set(tenant, (inFlight.get(tenant) ?? 1) - 1);
       metrics.inFlight(tenant, -1);
+    };
+    try {
+      const response = await handlerFor(entry, scopeSet(auth)).fetch(request, { authInfo: auth });
+      // Streamable HTTP answers with an event stream while the tool keeps running,
+      // so the slot is held until the body ends or the client goes away.
+      return holdUntilBodyEnds(response, release);
+    } catch (err) {
+      release();
+      throw err;
     }
   }
 
