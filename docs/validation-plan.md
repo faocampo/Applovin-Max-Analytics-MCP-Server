@@ -69,13 +69,18 @@ Status legend: ☐ pending · ✅ passed · ❌ failed (link the finding) · ⏭
 | V2.8 | Audit usefulness | Ask: *"Audit ad unit <name> for the last 7 days"* on an ad unit with a known issue. | Signals point to the known issue, with no misleading signals. Write down any signal you would add. | ☐ |
 | V2.9 | Quota behaviour | Use the configuration tools normally for ~30 minutes. | No `rate_limited` errors; repeated reads are served from cache | ☐ |
 
-**Decisions needed before M3 writes**
-- D3.1: Which ad units are in the write allowlist for testing? (See M3 prerequisites.)
-- D3.2: Default guardrails:
-  - maximum bid floor change per plan (proposal: ±20%);
-  - maximum networks disabled per plan (proposal: 1);
-  - block all writes while an experiment is active (proposal: yes).
-- D3.3: Human confirmation. Proposal: always require explicit confirmation (MCP elicitation) for `apply_change`, with no auto-apply in M3.
+**M3 decisions: defaults applied, awaiting confirmation**
+
+M3 shipped with the defaults proposed here. Each one is a configuration value, so changing it needs no code change.
+
+| ID | Decision | Default in code | Setting |
+|---|---|---|---|
+| D3.1 | Ad units that may be changed | **None.** Writes cannot be enabled without an explicit allowlist | `APPLOVIN_WRITE_ALLOWLIST` |
+| D3.2a | Maximum bid floor change per plan | ±20% | `APPLOVIN_WRITE_MAX_FLOOR_CHANGE_PCT` |
+| D3.2b | Maximum networks disabled per plan | 1 | `APPLOVIN_WRITE_MAX_NETWORKS_DISABLED` |
+| D3.2c | Writes while an experiment is active | Blocked | `APPLOVIN_WRITE_ALLOW_DURING_EXPERIMENT` |
+| D3.2d | Fields per plan | 1 | `APPLOVIN_WRITE_MAX_FIELDS` |
+| D3.3 | Human confirmation | Required on every apply (MCP elicitation); no auto-apply | `APPLOVIN_WRITE_CONFIRMATION` |
 
 ---
 
@@ -85,17 +90,34 @@ Status legend: ☐ pending · ✅ passed · ❌ failed (link the finding) · ⏭
 - A **dedicated test app** in the MAX account, with one ad unit per format (banner, interstitial, rewarded).
 - Minimal or no production traffic on that app.
 - Permission to change those ad units freely, plus a rollback contact.
+- An MCP client that supports **elicitation**, so it can ask you to confirm. Claude Code does; check your Claude Desktop version. Without it, every apply is refused by design.
+- V2.2 completed, so the real schemas of `bid_floors`, `frequency_capping_settings` and `ad_network_settings` are known.
+
+**Setup**
+```bash
+# .env, in addition to the M1/M2 keys
+APPLOVIN_ENABLE_WRITES=true
+APPLOVIN_WRITE_ALLOWLIST=<test ad unit id 1>,<test ad unit id 2>
+APPLOVIN_AUDIT_LOG=./audit-m3.jsonl
+```
+Restart the client after changing the settings. Then ask the agent to make each change in plain language, e.g. *"Raise the US bid floor of ad unit <test unit> by 10%"*. The agent should call `get_ad_unit`, then `plan_change`, and show you the plan before calling `apply_change`.
 
 | ID | Test | How | Expected | Status |
 |---|---|---|---|---|
-| V3.1 | Plan has no side effects | Ask for a floor change plan on a test ad unit, then compare the dashboard before and after. | Nothing changes; the plan shows the diff and the policy results | ☐ |
-| V3.2 | Apply and rollback: test devices | Plan, apply, then roll back adding a test device. | Device appears in the dashboard, then disappears. Three audit log entries. | ☐ |
-| V3.3 | Apply and rollback: bid floors | Same flow on bid floors. | The full floor list is preserved, and rollback restores it exactly | ☐ |
-| V3.4 | Apply and rollback: frequency capping | Same flow on frequency capping. | Applied, then restored | ☐ |
-| V3.5 | Drift detection | Plan a change, edit the same ad unit in the dashboard, then apply. | Apply refused with "state changed since plan" | ☐ |
-| V3.6 | Policy refusals | Plan a floor change beyond the threshold, and a change on an ad unit that isn't allowlisted. | Both refused, with reasons | ☐ |
-| V3.7 | Kill switch | Restart without `APPLOVIN_ENABLE_WRITES`. | Write tools disappear | ☐ |
-| V3.8 | Audit log review | Read the log after V3.2–V3.6. | Every action is traceable; no credentials | ☐ |
+| V3.1 | Plan has no side effects | Ask for a floor change plan, compare the dashboard before and after, then stop before applying. | Dashboard unchanged. The plan shows the diff, every guardrail and a token. The audit log has `plan_created`. | ☐ |
+| V3.2 | **Update request format** | Apply a +10% floor change on a test ad unit. | Apply succeeds and `verification.matches` is true. **If AppLovin rejects the body (`{ id, bid_floors }`), report the error: it tells us the real format.** | ☐ |
+| V3.3 | Apply and rollback: bid floors | After V3.2, ask the agent to roll back the change, then confirm. | Floors restored exactly in the dashboard. `list_changes` shows both changes and the rollback link. | ☐ |
+| V3.4 | Apply and rollback: frequency capping | Same flow on `frequency_capping_settings`. | Applied, then restored | ☐ |
+| V3.5 | Apply and rollback: one network off | Disable one network in a test waterfall, then roll back. | Applied, then restored. Disabling 2 networks in one plan is refused. | ☐ |
+| V3.6 | Drift detection | Plan a change, edit the same ad unit in the dashboard, then apply. | Refused with "changed since this plan"; nothing written | ☐ |
+| V3.7 | Guardrail refusals | Plan a +50% floor change; plan a change on an ad unit outside the allowlist; plan a change on an ad unit with an active experiment. | All three refused with reasons, and no token issued | ☐ |
+| V3.8 | Human decline | Decline the confirmation prompt. | Nothing written; `apply_refused` with "human declined" | ☐ |
+| V3.9 | Kill switch | Remove `APPLOVIN_ENABLE_WRITES` and restart. | `plan_change` / `apply_change` / `rollback_change` / `list_changes` disappear | ☐ |
+| V3.10 | Audit log review | Read `audit-m3.jsonl` after V3.1–V3.8. | Every action is traceable (client, reason, diff, guardrails, outcome); no keys or tokens | ☐ |
+
+**Known gaps** (tracked in issue #22)
+- **Test devices** (`/test_device`) are not writable yet: their request schema is undocumented in the material available to the build. They follow once V2.5 shows the real shape.
+- The identity keys that diffs and floor-change checks use (`country`, `id`, network API name) are educated guesses. V3.2–V3.5 confirm them.
 
 ---
 

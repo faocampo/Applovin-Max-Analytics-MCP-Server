@@ -1,5 +1,6 @@
 export type ApplovinErrorKind =
   | 'validation'
+  | 'refused'
   | 'auth'
   | 'rate_limited'
   | 'http'
@@ -38,6 +39,8 @@ export function recoveryHint(error: ApplovinError): string {
   switch (error.kind) {
     case 'validation':
       return 'Fix the arguments and call the tool again.';
+    case 'refused':
+      return 'A safety guardrail refused this. Do not retry the same request; explain the reason to the user.';
     case 'auth':
       return 'The AppLovin key was rejected. This needs a human: check the Report Key or Management Key configured for this server. Do not retry.';
     case 'rate_limited':

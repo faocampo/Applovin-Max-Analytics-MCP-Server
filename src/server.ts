@@ -10,7 +10,10 @@ import { registerCohortReportTool } from './tools/cohortReport.js';
 import type { ToolDeps } from './tools/common.js';
 import { registerManagementTools } from './tools/management.js';
 import { registerRevenueReportTool } from './tools/revenueReport.js';
+import { registerWriteTools } from './tools/writes.js';
 import { SERVER_NAME, SERVER_VERSION } from './version.js';
+import { AuditLog } from './writes/auditLog.js';
+import { ChangeService } from './writes/changeService.js';
 
 export interface Runtime {
   deps: ToolDeps;
@@ -65,10 +68,27 @@ export function createRuntime(config: Config, overrides: RuntimeOverrides = {}):
       })
     : undefined;
 
+  const changes =
+    management && config.writes
+      ? new ChangeService({
+          management,
+          config: config.writes,
+          audit: new AuditLog(config.writes.auditLogPath, redact),
+        })
+      : undefined;
+  if (changes && config.writes) {
+    logger.warn('writes enabled', {
+      allowlist: config.writes.allowlist,
+      confirmation: config.writes.confirmation,
+      auditLog: changes.auditLogPath,
+    });
+  }
+
   return {
     deps: {
       reporting,
       management,
+      changes,
       logger,
       redact,
       shape: { maxRows: config.maxRows, maxBytes: config.maxResponseBytes },
@@ -80,15 +100,21 @@ export function createRuntime(config: Config, overrides: RuntimeOverrides = {}):
 
 export function serverInstructions(deps: ToolDeps): string {
   const base =
-    'Read-only access to AppLovin MAX. Use revenue_report for aggregated mediation performance ' +
+    'Access to AppLovin MAX. Use revenue_report for aggregated mediation performance ' +
     'and cohort_request for install-cohort curves. Prefer narrow date ranges and few ' +
     'dimensions; responses are capped and say when they were truncated.';
   if (!deps.management) {
     return `${base} Ad unit configuration tools are disabled because no Management Key is configured.`;
   }
-  return (
+  const config =
     `${base} For configuration, start with list_ad_units to find ad unit ids, then get_ad_unit ` +
-    'or audit_ad_unit. Nothing on this server can change the MAX configuration.'
+    'or audit_ad_unit.';
+  if (!deps.changes)
+    return `${config} Writes are disabled: nothing on this server can change the MAX configuration.`;
+  return (
+    `${config} Changes follow plan -> human review -> apply: call plan_change, show the user the ` +
+    'diff and guardrail results, and only then apply_change (the user is asked to confirm). ' +
+    'Never apply a plan the user has not seen. Every change can be undone with rollback_change.'
   );
 }
 
@@ -100,5 +126,6 @@ export function createServer(deps: ToolDeps): McpServer {
   registerRevenueReportTool(server, deps);
   registerCohortReportTool(server, deps);
   registerManagementTools(server, deps);
+  registerWriteTools(server, deps);
   return server;
 }

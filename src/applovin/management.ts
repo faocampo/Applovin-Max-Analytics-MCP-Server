@@ -136,7 +136,39 @@ export class ManagementApi {
     return this.read('/test_devices', undefined, 'the test device list', opts);
   }
 
-  /** Drops cached reads, e.g. after a write (M3). */
+  /**
+   * Updates the given fields of an ad unit (or one of its segments). AppLovin
+   * changes only the fields included in the body. The cache is dropped whatever
+   * the outcome: after a failed write the real state is unknown.
+   */
+  async updateAdUnit(
+    adUnitId: string,
+    patch: Record<string, unknown>,
+    segmentId?: string,
+    opts: { signal?: AbortSignal | undefined } = {},
+  ): Promise<unknown> {
+    const path = segmentId
+      ? `/ad_unit/${assertId(adUnitId, 'ad_unit_id')}/${assertId(segmentId, 'segment_id')}`
+      : `/ad_unit/${assertId(adUnitId, 'ad_unit_id')}`;
+    const url = new URL(`${this.options.baseUrl}${path}`);
+    try {
+      const res = await this.options.http.postJson(
+        url,
+        { id: adUnitId, ...patch },
+        {
+          ...(opts.signal && { signal: opts.signal }),
+          headers: { 'Api-Key': this.options.key },
+        },
+      );
+      return res.body.trim() === ''
+        ? {}
+        : parseJsonBody(res.body, `the update of ad unit ${adUnitId}`);
+    } finally {
+      this.invalidate();
+    }
+  }
+
+  /** Drops cached reads. */
   invalidate(): void {
     this.cache.clear();
   }

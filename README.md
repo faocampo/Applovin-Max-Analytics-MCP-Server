@@ -4,11 +4,12 @@ A [Model Context Protocol](https://modelcontextprotocol.io) server that gives AI
 (Claude and any other MCP client) read access to AppLovin MAX mediation analytics:
 aggregated revenue reporting and install-cohort reports.
 
-> **Status: Milestones 1–2 of the [roadmap](docs/roadmap.md).**
+> **Status: Milestones 1–3 of the [roadmap](docs/roadmap.md).**
 > - M1 hardened the read-only reporting foundation.
 > - M2 added read-only visibility into ad unit configuration (waterfalls, floors, segments, experiments) and an audit that joins configuration with performance.
+> - M3 added guarded writes: plan → human confirmation → apply → rollback.
 >
-> **Nothing on this server can change your MAX configuration yet.** Writes arrive in M3 behind plan/apply guardrails.
+> **Writes are off by default.** They need `APPLOVIN_ENABLE_WRITES=true` and an explicit allowlist of ad units. The write path has not yet been validated against a live account: use a dedicated test app first.
 >
 > Live-account checks: [docs/validation-plan.md](docs/validation-plan.md).
 
@@ -67,6 +68,56 @@ unchanged until `live-check` confirms the schemas. `audit_ad_unit` matches confi
 names (e.g. `ADMOB_BIDDING`) to reporting display names (e.g. `Google AdMob`) heuristically
 and lists anything it could not match.
 
+### Write tools (M3, off by default)
+
+Registered only when `APPLOVIN_ENABLE_WRITES=true`, `APPLOVIN_MANAGEMENT_KEY` and
+`APPLOVIN_WRITE_ALLOWLIST` are set. Removing `APPLOVIN_ENABLE_WRITES` and restarting is the
+kill switch: the tools disappear.
+
+| Tool | Purpose |
+|---|---|
+| `plan_change` | Prepares a change to `bid_floors`, `frequency_capping_settings` or `ad_network_settings` of an ad unit (or segment). Reads live state and returns the diff, every guardrail result and, only if all pass, a single-use `plan_token`. **Writes nothing.** |
+| `apply_change` | Applies a plan. The user is asked to confirm in their MCP client (elicitation). Refused if the token is expired or used, or if the ad unit changed since the plan (drift). Sends only the planned fields, reads them back to verify, and returns a `change_id`. |
+| `rollback_change` | Plans the restoration of the values an applied change replaced. Apply it with `apply_change`, under the same guardrails. |
+| `list_changes` | Changes applied through this server (from the audit log), newest first, with rollback links. |
+
+**How a change flows**
+
+```
+plan_change ──► agent shows diff + guardrails to the user ──► apply_change
+                                                                │
+              human confirms in the client (elicitation) ◄──────┤
+                                                                │
+                      re-read live state; same hash as plan? ───┤ no → refused (drift)
+                                                                ▼
+                         POST only the planned fields → read back → audit log → change_id
+```
+
+**Guardrails** (all configurable):
+
+| Policy | Default |
+|---|---|
+| Ad unit must be in `APPLOVIN_WRITE_ALLOWLIST` | always on |
+| Fields per change | `APPLOVIN_WRITE_MAX_FIELDS=1` |
+| No changes while an experiment is active | `APPLOVIN_WRITE_ALLOW_DURING_EXPERIMENT=false` |
+| Max relative change of any bid floor | `APPLOVIN_WRITE_MAX_FLOOR_CHANGE_PCT=20` |
+| `bid_floors` must be the complete list (AppLovin replaces it) | always on |
+| Networks disabled per change | `APPLOVIN_WRITE_MAX_NETWORKS_DISABLED=1` |
+| At least one ad network stays configured | always on |
+| Human confirmation on every apply | `APPLOVIN_WRITE_CONFIRMATION=elicit` (`none` only for automated testing) |
+
+Rollbacks skip the size limits (they restore a known previous state), but keep the allowlist,
+experiment and keep-a-network checks.
+
+**Failure handling.** Writes are retried only on HTTP 429. After a timeout, network error or
+5xx the outcome is unknown: the tool says so, the audit log marks `outcome_unknown`, and the
+next plan reads fresh state.
+
+**Audit log.** Every plan, refusal, apply and failure is appended as a redacted JSON line to
+`APPLOVIN_AUDIT_LOG` (default `~/.applovin-max-mcp/audit.jsonl`, mode 0600). It records the
+client name/version, the reason, the diff, the guardrail results and the before/after values
+that rollbacks use. Plan tokens are never logged.
+
 ## Setup
 
 Requirements: Node.js 20+ and an AppLovin MAX **Report Key** (MAX dashboard → Account → Keys).
@@ -106,6 +157,15 @@ npm run build
 | `APPLOVIN_MANAGEMENT_RPH` | `1000` | Client-side cap on Management API calls per hour (AppLovin allows 2,000/h per account; the rest is headroom for other integrations) |
 | `APPLOVIN_MANAGEMENT_CACHE_TTL_MS` | `60000` | Cache TTL for configuration reads (`0` disables) |
 | `APPLOVIN_MANAGEMENT_BASE_URL` | `https://o.applovin.com/mediation/v1` | Override for testing (HTTPS only) |
+| `APPLOVIN_ENABLE_WRITES` | `false` | Enables the write tools. Requires the Management Key and an allowlist |
+| `APPLOVIN_WRITE_ALLOWLIST` | — | Comma-separated ad unit ids that may be changed |
+| `APPLOVIN_WRITE_MAX_FIELDS` | `1` | Fields per change (1–3) |
+| `APPLOVIN_WRITE_MAX_FLOOR_CHANGE_PCT` | `20` | Max relative change of any bid floor |
+| `APPLOVIN_WRITE_MAX_NETWORKS_DISABLED` | `1` | Max networks disabled per change |
+| `APPLOVIN_WRITE_ALLOW_DURING_EXPERIMENT` | `false` | Allow changes while an experiment is active |
+| `APPLOVIN_WRITE_CONFIRMATION` | `elicit` | `elicit` asks the user before every apply; `none` is for automated tests only |
+| `APPLOVIN_WRITE_PLAN_TTL_MS` | `900000` | Plan token lifetime (15 min) |
+| `APPLOVIN_AUDIT_LOG` | `~/.applovin-max-mcp/audit.jsonl` | Audit log path |
 
 The server fails fast at startup if the configuration is invalid.
 
@@ -141,6 +201,11 @@ src/
     reporting.ts        report/cohort domain, validation, query builders
     management.ts       Ad Unit Management API reads, id validation, TTL cache
     audit.ts            pure configuration x performance analysis
+  writes/               M3 write path, no MCP types
+    changeService.ts    plan / apply / rollback orchestration
+    policy.ts           guardrails
+    diff.ts             canonical JSON, state hash, identity-aware diff
+    auditLog.ts         append-only JSONL audit log
     redact.ts, errors.ts
   tools/                MCP tool definitions (schemas, descriptions, result mapping)
 test/                   vitest suites, including MCP client ↔ server integration
@@ -158,6 +223,7 @@ and [docs/validation-plan.md](docs/validation-plan.md) tracks the results:
 - Cohort metric column names and the supported day suffixes.
 - The 45-day maximum range for cohort requests.
 - Management API response schemas (ad network settings, bid floors, segments, experiments).
+- Management API update requests: `POST /ad_unit/{id}` (or `/{segment_id}`) with `{ id, ...fields }`, changing only the fields sent.
 
 ## Changes from the Go proof of concept
 

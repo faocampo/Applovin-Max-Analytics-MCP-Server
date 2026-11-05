@@ -56,7 +56,34 @@ export class ApplovinHttpClient {
     };
   }
 
-  async get(url: URL, init: RequestOptions = {}): Promise<HttpResponse> {
+  get(url: URL, init: RequestOptions = {}): Promise<HttpResponse> {
+    return this.send('GET', url, init, 'safe');
+  }
+
+  /**
+   * POSTs a JSON body. Only 429 is retried: after a timeout, network error or
+   * 5xx the write may or may not have happened, so callers must re-read state
+   * instead of blindly retrying.
+   */
+  postJson(url: URL, body: unknown, init: RequestOptions = {}): Promise<HttpResponse> {
+    return this.send(
+      'POST',
+      url,
+      {
+        ...init,
+        headers: { ...init.headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      },
+      'rate_limit_only',
+    );
+  }
+
+  private async send(
+    method: 'GET' | 'POST',
+    url: URL,
+    init: RequestOptions & { body?: string },
+    retryPolicy: 'safe' | 'rate_limit_only',
+  ): Promise<HttpResponse> {
     const { logger, redact, maxRetries } = this.opts;
     const safeUrl = redactUrl(url, redact);
     const totalAttempts = maxRetries + 1;
@@ -69,7 +96,7 @@ export class ApplovinHttpClient {
       let outcome: HttpResponse | ApplovinError;
       let retryAfterMs: number | undefined;
       try {
-        const res = await this.attempt(url, init);
+        const res = await this.attempt(method, url, init);
         outcome = res.response;
         retryAfterMs = res.retryAfterMs;
       } catch (err) {
@@ -80,6 +107,7 @@ export class ApplovinHttpClient {
       const durationMs = Date.now() - started;
       if (!(outcome instanceof ApplovinError) && outcome.status >= 200 && outcome.status < 300) {
         logger.debug('applovin request ok', {
+          method,
           url: safeUrl,
           status: outcome.status,
           attempt,
@@ -90,11 +118,14 @@ export class ApplovinHttpClient {
 
       const error = outcome instanceof ApplovinError ? outcome : this.httpError(outcome, attempt);
       const retryable =
-        error.kind === 'network' ||
-        error.kind === 'timeout' ||
-        (error.status !== undefined && RETRYABLE_STATUS.has(error.status));
+        retryPolicy === 'rate_limit_only'
+          ? error.status === 429
+          : error.kind === 'network' ||
+            error.kind === 'timeout' ||
+            (error.status !== undefined && RETRYABLE_STATUS.has(error.status));
 
       logger.warn('applovin request failed', {
+        method,
         url: safeUrl,
         attempt,
         durationMs,
@@ -114,15 +145,17 @@ export class ApplovinHttpClient {
   }
 
   private async attempt(
+    method: 'GET' | 'POST',
     url: URL,
-    init: RequestOptions,
+    init: RequestOptions & { body?: string },
   ): Promise<{ response: HttpResponse; retryAfterMs: number | undefined }> {
     const timeout = AbortSignal.timeout(this.opts.timeoutMs);
     const signal = init.signal ? AbortSignal.any([init.signal, timeout]) : timeout;
     try {
       const res = await this.opts.fetch(url, {
-        method: 'GET',
+        method,
         headers: { ...init.headers, Accept: init.accept ?? 'application/json' },
+        ...(init.body !== undefined && { body: init.body }),
         signal,
       });
       const body = await res.text();
