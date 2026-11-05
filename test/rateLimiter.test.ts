@@ -51,6 +51,18 @@ describe('TokenBucket', () => {
 
   it('validates its configuration', () => {
     expect(() => new TokenBucket({ perMinute: 0 })).toThrow(RangeError);
+    expect(() => new TokenBucket({ perMinute: 1, burst: 0.5 })).toThrow(RangeError);
+  });
+
+  it('supports per-hour rates with a separate burst', async () => {
+    const clock = fakeClock();
+    // 60 per hour = 1 per minute, burst of 2.
+    const bucket = new TokenBucket({ perMinute: 1, burst: 2, now: clock.now, sleep: clock.sleep });
+    await bucket.acquire();
+    await bucket.acquire();
+    expect(clock.waits).toEqual([]);
+    await bucket.acquire();
+    expect(clock.waits).toEqual([60_000]);
   });
 
   it('uses real time by default', async () => {

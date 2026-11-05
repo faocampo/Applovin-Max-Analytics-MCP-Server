@@ -1,6 +1,6 @@
 {
   "name": "applovin-max-mcp",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "MCP server that gives AI agents access to AppLovin MAX reporting and cohort analytics.",
   "license": "MIT",
   "type": "module",
@@ -22,7 +22,8 @@
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "check": "npm run lint && npm run typecheck && npm run test:coverage && npm run build && npm run smoke",
-    "smoke": "node scripts/smoke.mjs"
+    "smoke": "node scripts/smoke.mjs",
+    "live-check": "npm run build && node scripts/live-check.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/server": "2.3.1",

@@ -1,5 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/server';
 import { ApplovinHttpClient } from './applovin/httpClient.js';
+import { ManagementApi } from './applovin/management.js';
 import { TokenBucket } from './applovin/rateLimiter.js';
 import { createRedactor, type Redactor } from './applovin/redact.js';
 import { ReportingApi } from './applovin/reporting.js';
@@ -7,6 +8,7 @@ import type { Config } from './config.js';
 import { createLogger, type Logger } from './logger.js';
 import { registerCohortReportTool } from './tools/cohortReport.js';
 import type { ToolDeps } from './tools/common.js';
+import { registerManagementTools } from './tools/management.js';
 import { registerRevenueReportTool } from './tools/revenueReport.js';
 import { SERVER_NAME, SERVER_VERSION } from './version.js';
 
@@ -21,30 +23,52 @@ export interface RuntimeOverrides {
   logWrite?: (line: string) => void;
 }
 
+/** Burst allowance for the Management API bucket, so an audit is not throttled mid-way. */
+const MANAGEMENT_BURST = 20;
+
 /** Wires config into long-lived collaborators shared by every MCP connection. */
 export function createRuntime(config: Config, overrides: RuntimeOverrides = {}): Runtime {
-  const redact = createRedactor([config.reportKey]);
+  const redact = createRedactor([config.reportKey, config.management?.key]);
   const logger = createLogger({
     level: config.logLevel,
     redact,
     ...(overrides.logWrite && { write: overrides.logWrite }),
   });
-  const http = new ApplovinHttpClient({
-    timeoutMs: config.httpTimeoutMs,
-    maxRetries: config.maxRetries,
-    redact,
-    logger,
-    rateLimiter: new TokenBucket({ perMinute: config.reportRequestsPerMinute }),
-    ...(overrides.fetch && { fetch: overrides.fetch }),
-  });
+  const httpFor = (rateLimiter: TokenBucket) =>
+    new ApplovinHttpClient({
+      timeoutMs: config.httpTimeoutMs,
+      maxRetries: config.maxRetries,
+      redact,
+      logger,
+      rateLimiter,
+      ...(overrides.fetch && { fetch: overrides.fetch }),
+    });
+
   const reporting = new ReportingApi({
-    http,
+    http: httpFor(new TokenBucket({ perMinute: config.reportRequestsPerMinute })),
     reportKey: config.reportKey,
     baseUrl: config.reportBaseUrl,
   });
+
+  const m = config.management;
+  const management = m
+    ? new ManagementApi({
+        http: httpFor(
+          new TokenBucket({
+            perMinute: m.requestsPerHour / 60,
+            burst: Math.min(MANAGEMENT_BURST, m.requestsPerHour),
+          }),
+        ),
+        key: m.key,
+        baseUrl: m.baseUrl,
+        cacheTtlMs: m.cacheTtlMs,
+      })
+    : undefined;
+
   return {
     deps: {
       reporting,
+      management,
       logger,
       redact,
       shape: { maxRows: config.maxRows, maxBytes: config.maxResponseBytes },
@@ -54,18 +78,27 @@ export function createRuntime(config: Config, overrides: RuntimeOverrides = {}):
   };
 }
 
+export function serverInstructions(deps: ToolDeps): string {
+  const base =
+    'Read-only access to AppLovin MAX. Use revenue_report for aggregated mediation performance ' +
+    'and cohort_request for install-cohort curves. Prefer narrow date ranges and few ' +
+    'dimensions; responses are capped and say when they were truncated.';
+  if (!deps.management) {
+    return `${base} Ad unit configuration tools are disabled because no Management Key is configured.`;
+  }
+  return (
+    `${base} For configuration, start with list_ad_units to find ad unit ids, then get_ad_unit ` +
+    'or audit_ad_unit. Nothing on this server can change the MAX configuration.'
+  );
+}
+
 export function createServer(deps: ToolDeps): McpServer {
   const server = new McpServer(
     { name: SERVER_NAME, version: SERVER_VERSION },
-    {
-      capabilities: { tools: {} },
-      instructions:
-        'Read-only access to AppLovin MAX analytics. Use revenue_report for aggregated mediation ' +
-        'performance and cohort_request for install-cohort curves. Prefer narrow date ranges and ' +
-        'few dimensions; responses are capped and say when they were truncated.',
-    },
+    { capabilities: { tools: {} }, instructions: serverInstructions(deps) },
   );
   registerRevenueReportTool(server, deps);
   registerCohortReportTool(server, deps);
+  registerManagementTools(server, deps);
   return server;
 }

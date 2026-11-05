@@ -25,8 +25,10 @@ export const sleep: Sleep = (ms, signal) =>
   });
 
 export interface TokenBucketOptions {
-  /** Tokens added per minute; also the bucket capacity (allows one minute of burst). */
+  /** Tokens added per minute. */
   perMinute: number;
+  /** Bucket capacity (max burst). Defaults to `perMinute`, i.e. one minute of burst. */
+  burst?: number;
   now?: () => number;
   sleep?: Sleep;
 }
@@ -46,7 +48,9 @@ export class TokenBucket implements RateLimiter {
 
   constructor(options: TokenBucketOptions) {
     if (!(options.perMinute > 0)) throw new RangeError('perMinute must be > 0');
-    this.capacity = options.perMinute;
+    const burst = options.burst ?? options.perMinute;
+    if (!(burst >= 1)) throw new RangeError('burst must be >= 1');
+    this.capacity = burst;
     this.refillPerMs = options.perMinute / 60_000;
     this.now = options.now ?? Date.now;
     this.sleep = options.sleep ?? sleep;

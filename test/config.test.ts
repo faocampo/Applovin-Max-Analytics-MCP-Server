@@ -72,4 +72,27 @@ describe('loadConfig', () => {
       expect(msg).toContain('LOG_LEVEL');
     }
   });
+
+  it('enables the Management API only when its key is set', () => {
+    expect(loadConfig({ APPLOVIN_REPORT_KEY: 'k' }).management).toBeUndefined();
+    expect(
+      loadConfig({ APPLOVIN_REPORT_KEY: 'k', APPLOVIN_MANAGEMENT_KEY: 'mk' }).management,
+    ).toEqual({
+      key: 'mk',
+      baseUrl: 'https://o.applovin.com/mediation/v1',
+      requestsPerHour: 1000,
+      cacheTtlMs: 60_000,
+    });
+    expect(
+      loadConfig({
+        APPLOVIN_REPORT_KEY: 'k',
+        APPLOVIN_MANAGEMENT_KEY: 'mk',
+        APPLOVIN_MANAGEMENT_RPH: '2000',
+        APPLOVIN_MANAGEMENT_CACHE_TTL_MS: '0',
+      }).management,
+    ).toMatchObject({ requestsPerHour: 2000, cacheTtlMs: 0 });
+    expect(() => loadConfig({ APPLOVIN_REPORT_KEY: 'k', APPLOVIN_MANAGEMENT_RPH: '2001' })).toThrow(
+      /APPLOVIN_MANAGEMENT_RPH/,
+    );
+  });
 });

@@ -1,7 +1,7 @@
 import type { CallToolResult } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 import { ApplovinError, recoveryHint } from '../applovin/errors.js';
-import type { HttpResponse } from '../applovin/httpClient.js';
+import type { ManagementApi } from '../applovin/management.js';
 import type { Redactor } from '../applovin/redact.js';
 import type { OutputFormat, ReportingApi } from '../applovin/reporting.js';
 import type { Logger } from '../logger.js';
@@ -9,6 +9,8 @@ import { type ShapeOptions, shapeResponse } from '../shaping.js';
 
 export interface ToolDeps {
   reporting: ReportingApi;
+  /** Present only when a Management Key is configured. */
+  management?: ManagementApi | undefined;
   logger: Logger;
   redact: Redactor;
   shape: ShapeOptions;
@@ -80,7 +82,7 @@ export async function runReportTool(
   deps: ToolDeps,
   tool: string,
   format: OutputFormat,
-  call: () => Promise<HttpResponse>,
+  call: () => Promise<{ body: string }>,
 ): Promise<CallToolResult> {
   const started = Date.now();
   try {

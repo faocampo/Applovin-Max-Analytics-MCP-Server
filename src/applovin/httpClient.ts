@@ -23,6 +23,13 @@ export interface HttpClientOptions {
   maxBackoffMs?: number;
 }
 
+export interface RequestOptions {
+  signal?: AbortSignal;
+  accept?: string;
+  /** Extra request headers, e.g. credentials. Values are never logged. */
+  headers?: Record<string, string>;
+}
+
 const RETRYABLE_STATUS = new Set([429, 500, 502, 503, 504]);
 const ERROR_SNIPPET_CHARS = 500;
 
@@ -49,7 +56,7 @@ export class ApplovinHttpClient {
     };
   }
 
-  async get(url: URL, init: { signal?: AbortSignal; accept?: string } = {}): Promise<HttpResponse> {
+  async get(url: URL, init: RequestOptions = {}): Promise<HttpResponse> {
     const { logger, redact, maxRetries } = this.opts;
     const safeUrl = redactUrl(url, redact);
     const totalAttempts = maxRetries + 1;
@@ -108,14 +115,14 @@ export class ApplovinHttpClient {
 
   private async attempt(
     url: URL,
-    init: { signal?: AbortSignal; accept?: string },
+    init: RequestOptions,
   ): Promise<{ response: HttpResponse; retryAfterMs: number | undefined }> {
     const timeout = AbortSignal.timeout(this.opts.timeoutMs);
     const signal = init.signal ? AbortSignal.any([init.signal, timeout]) : timeout;
     try {
       const res = await this.opts.fetch(url, {
         method: 'GET',
-        headers: { Accept: init.accept ?? 'application/json' },
+        headers: { ...init.headers, Accept: init.accept ?? 'application/json' },
         signal,
       });
       const body = await res.text();

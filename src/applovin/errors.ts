@@ -39,7 +39,7 @@ export function recoveryHint(error: ApplovinError): string {
     case 'validation':
       return 'Fix the arguments and call the tool again.';
     case 'auth':
-      return 'The AppLovin key was rejected. This needs a human: check the Report Key configured for this server. Do not retry.';
+      return 'The AppLovin key was rejected. This needs a human: check the Report Key or Management Key configured for this server. Do not retry.';
     case 'rate_limited':
       return 'AppLovin is rate limiting this account. Wait before retrying, and prefer fewer, more aggregated queries.';
     case 'timeout':
