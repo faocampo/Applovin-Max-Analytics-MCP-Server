@@ -1,7 +1,7 @@
 import type { McpServer, ServerContext } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 import type { CallContext, ChangeService, ConfirmOutcome, Plan } from '../writes/changeService.js';
-import { READ_ONLY_ANNOTATIONS, runReportTool, type ToolDeps } from './common.js';
+import { can, READ_ONLY_ANNOTATIONS, runReportTool, type ToolDeps } from './common.js';
 
 const idArg = (what: string) =>
   z
@@ -126,95 +126,98 @@ export function registerWriteTools(server: McpServer, deps: ToolDeps): void {
   const changes: ChangeService | undefined = deps.changes;
   if (!changes) return;
 
-  server.registerTool(
-    'plan_change',
-    {
-      title: 'Plan a MAX ad unit change',
-      description:
-        'Prepares a change to an ad unit (bid floors, frequency capping or ad network settings) ' +
-        'WITHOUT applying it. Returns the diff against the live configuration, the result of every ' +
-        'safety guardrail, and — only if all guardrails pass — a single-use plan_token for ' +
-        'apply_change. Always show the diff to the user before applying.',
-      inputSchema: planChangeInput,
-      annotations: {
-        readOnlyHint: false,
-        destructiveHint: false,
-        idempotentHint: false,
-        openWorldHint: true,
+  if (can(deps, 'propose'))
+    server.registerTool(
+      'plan_change',
+      {
+        title: 'Plan a MAX ad unit change',
+        description:
+          'Prepares a change to an ad unit (bid floors, frequency capping or ad network settings) ' +
+          'WITHOUT applying it. Returns the diff against the live configuration, the result of every ' +
+          'safety guardrail, and — only if all guardrails pass — a single-use plan_token for ' +
+          'apply_change. Always show the diff to the user before applying.',
+        inputSchema: planChangeInput,
+        annotations: {
+          readOnlyHint: false,
+          destructiveHint: false,
+          idempotentHint: false,
+          openWorldHint: true,
+        },
       },
-    },
-    async (args, ctx) =>
-      runReportTool(deps, 'plan_change', 'json', async () => {
-        const plan = await changes.plan(
-          {
-            adUnitId: args.ad_unit_id,
-            segmentId: args.segment_id,
-            changes: args.changes as Record<string, unknown>,
-            reason: args.reason,
-          },
-          callContext(server, ctx),
-        );
-        return json({
-          ...plan,
-          next_step: plan.allowed
-            ? 'Nothing has been changed yet. Show this diff to the user; if they agree, call apply_change with plan_token.'
-            : 'Refused by guardrails (see policies). Nothing was changed and no token was issued.',
-        });
-      }),
-  );
+      async (args, ctx) =>
+        runReportTool(deps, 'plan_change', 'json', async () => {
+          const plan = await changes.plan(
+            {
+              adUnitId: args.ad_unit_id,
+              segmentId: args.segment_id,
+              changes: args.changes as Record<string, unknown>,
+              reason: args.reason,
+            },
+            callContext(server, ctx),
+          );
+          return json({
+            ...plan,
+            next_step: plan.allowed
+              ? 'Nothing has been changed yet. Show this diff to the user; if they agree, call apply_change with plan_token.'
+              : 'Refused by guardrails (see policies). Nothing was changed and no token was issued.',
+          });
+        }),
+    );
 
-  server.registerTool(
-    'apply_change',
-    {
-      title: 'Apply a planned MAX change',
-      description:
-        'Applies a plan created by plan_change or rollback_change. The user is asked to confirm in ' +
-        'their client. The change is refused if the ad unit changed since the plan, if the plan ' +
-        'expired, or if the token was already used. Returns a change_id for rollback.',
-      inputSchema: applyChangeInput,
-      annotations: {
-        readOnlyHint: false,
-        destructiveHint: true,
-        idempotentHint: false,
-        openWorldHint: true,
+  if (can(deps, 'apply'))
+    server.registerTool(
+      'apply_change',
+      {
+        title: 'Apply a planned MAX change',
+        description:
+          'Applies a plan created by plan_change or rollback_change. The user is asked to confirm in ' +
+          'their client. The change is refused if the ad unit changed since the plan, if the plan ' +
+          'expired, or if the token was already used. Returns a change_id for rollback.',
+        inputSchema: applyChangeInput,
+        annotations: {
+          readOnlyHint: false,
+          destructiveHint: true,
+          idempotentHint: false,
+          openWorldHint: true,
+        },
       },
-    },
-    async (args, ctx) =>
-      runReportTool(deps, 'apply_change', 'json', async () =>
-        json(await changes.apply(args.plan_token, callContext(server, ctx))),
-      ),
-  );
+      async (args, ctx) =>
+        runReportTool(deps, 'apply_change', 'json', async () =>
+          json(await changes.apply(args.plan_token, callContext(server, ctx))),
+        ),
+    );
 
-  server.registerTool(
-    'rollback_change',
-    {
-      title: 'Plan the rollback of a MAX change',
-      description:
-        'Prepares a plan that restores the configuration an applied change replaced. Like ' +
-        'plan_change, it applies nothing: pass the returned plan_token to apply_change.',
-      inputSchema: rollbackChangeInput,
-      annotations: {
-        readOnlyHint: false,
-        destructiveHint: false,
-        idempotentHint: false,
-        openWorldHint: true,
+  if (can(deps, 'propose'))
+    server.registerTool(
+      'rollback_change',
+      {
+        title: 'Plan the rollback of a MAX change',
+        description:
+          'Prepares a plan that restores the configuration an applied change replaced. Like ' +
+          'plan_change, it applies nothing: pass the returned plan_token to apply_change.',
+        inputSchema: rollbackChangeInput,
+        annotations: {
+          readOnlyHint: false,
+          destructiveHint: false,
+          idempotentHint: false,
+          openWorldHint: true,
+        },
       },
-    },
-    async (args, ctx) =>
-      runReportTool(deps, 'rollback_change', 'json', async () => {
-        const plan = await changes.planRollback(
-          args.change_id,
-          args.reason,
-          callContext(server, ctx),
-        );
-        return json({
-          ...plan,
-          next_step: plan.allowed
-            ? 'Nothing has been changed yet. Show this diff to the user; if they agree, call apply_change with plan_token.'
-            : 'Refused by guardrails (see policies). Nothing was changed.',
-        });
-      }),
-  );
+      async (args, ctx) =>
+        runReportTool(deps, 'rollback_change', 'json', async () => {
+          const plan = await changes.planRollback(
+            args.change_id,
+            args.reason,
+            callContext(server, ctx),
+          );
+          return json({
+            ...plan,
+            next_step: plan.allowed
+              ? 'Nothing has been changed yet. Show this diff to the user; if they agree, call apply_change with plan_token.'
+              : 'Refused by guardrails (see policies). Nothing was changed.',
+          });
+        }),
+    );
 
   server.registerTool(
     'list_changes',

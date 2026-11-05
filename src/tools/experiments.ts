@@ -10,7 +10,7 @@ import {
 import { REPORT_DIMENSIONS, type ReportColumn, validateDateRange } from '../applovin/reporting.js';
 import { type DailyArmMetrics, evaluateExperiment, identifyArms } from '../experiments/evaluate.js';
 import type { Plan } from '../writes/changeService.js';
-import { dateArg, READ_ONLY_ANNOTATIONS, runReportTool, type ToolDeps } from './common.js';
+import { can, dateArg, READ_ONLY_ANNOTATIONS, runReportTool, type ToolDeps } from './common.js';
 import { callContext } from './writes.js';
 
 export const MAX_EVALUATION_RANGE_DAYS = 90;
@@ -215,73 +215,76 @@ export function registerExperimentTools(server: McpServer, deps: ToolDeps): void
     openWorldHint: true,
   } as const;
 
-  server.registerTool(
-    'plan_experiment',
-    {
-      title: 'Plan a MAX A/B experiment',
-      description:
-        'Prepares an A/B experiment on an ad unit: the test arm starts as a copy of the current ' +
-        'configuration with the given changes. Same guardrails as plan_change; the ad unit must have no ' +
-        'active experiment. Writes nothing: pass plan_token to apply_change after the user agrees.',
-      inputSchema: planExperimentInput,
-      annotations: planAnnotations,
-    },
-    async (args, ctx) =>
-      runReportTool(deps, 'plan_experiment', 'json', async () =>
-        planResponse(
-          await changes.plan(
-            {
-              operation: 'create_experiment',
-              adUnitId: args.ad_unit_id,
-              changes: args.changes as Record<string, unknown>,
-              reason: args.reason,
-            },
-            callContext(server, ctx),
+  if (can(deps, 'propose'))
+    server.registerTool(
+      'plan_experiment',
+      {
+        title: 'Plan a MAX A/B experiment',
+        description:
+          'Prepares an A/B experiment on an ad unit: the test arm starts as a copy of the current ' +
+          'configuration with the given changes. Same guardrails as plan_change; the ad unit must have no ' +
+          'active experiment. Writes nothing: pass plan_token to apply_change after the user agrees.',
+        inputSchema: planExperimentInput,
+        annotations: planAnnotations,
+      },
+      async (args, ctx) =>
+        runReportTool(deps, 'plan_experiment', 'json', async () =>
+          planResponse(
+            await changes.plan(
+              {
+                operation: 'create_experiment',
+                adUnitId: args.ad_unit_id,
+                changes: args.changes as Record<string, unknown>,
+                reason: args.reason,
+              },
+              callContext(server, ctx),
+            ),
           ),
         ),
-      ),
-  );
+    );
 
-  server.registerTool(
-    'plan_experiment_promotion',
-    {
-      title: 'Plan promoting a MAX experiment',
-      description:
-        "Prepares promoting the experiment's test arm to the ad unit's configuration. By default it requires " +
-        `a recent evaluate_experiment recommending "promote". Fields compared: ${EXPERIMENT_FIELDS.join(', ')}. ` +
-        'Writes nothing: pass plan_token to apply_change after the user agrees.',
-      inputSchema: planExperimentActionInput,
-      annotations: planAnnotations,
-    },
-    async (args, ctx) =>
-      runReportTool(deps, 'plan_experiment_promotion', 'json', async () =>
-        planResponse(
-          await changes.plan(
-            { operation: 'promote_experiment', adUnitId: args.ad_unit_id, reason: args.reason },
-            callContext(server, ctx),
+  if (can(deps, 'propose'))
+    server.registerTool(
+      'plan_experiment_promotion',
+      {
+        title: 'Plan promoting a MAX experiment',
+        description:
+          "Prepares promoting the experiment's test arm to the ad unit's configuration. By default it requires " +
+          `a recent evaluate_experiment recommending "promote". Fields compared: ${EXPERIMENT_FIELDS.join(', ')}. ` +
+          'Writes nothing: pass plan_token to apply_change after the user agrees.',
+        inputSchema: planExperimentActionInput,
+        annotations: planAnnotations,
+      },
+      async (args, ctx) =>
+        runReportTool(deps, 'plan_experiment_promotion', 'json', async () =>
+          planResponse(
+            await changes.plan(
+              { operation: 'promote_experiment', adUnitId: args.ad_unit_id, reason: args.reason },
+              callContext(server, ctx),
+            ),
           ),
         ),
-      ),
-  );
+    );
 
-  server.registerTool(
-    'plan_experiment_deprecation',
-    {
-      title: 'Plan ending a MAX experiment',
-      description:
-        'Prepares deprecating the experiment: the test arm is discarded and the ad unit keeps its current ' +
-        'configuration. Writes nothing: pass plan_token to apply_change after the user agrees.',
-      inputSchema: planExperimentActionInput,
-      annotations: planAnnotations,
-    },
-    async (args, ctx) =>
-      runReportTool(deps, 'plan_experiment_deprecation', 'json', async () =>
-        planResponse(
-          await changes.plan(
-            { operation: 'deprecate_experiment', adUnitId: args.ad_unit_id, reason: args.reason },
-            callContext(server, ctx),
+  if (can(deps, 'propose'))
+    server.registerTool(
+      'plan_experiment_deprecation',
+      {
+        title: 'Plan ending a MAX experiment',
+        description:
+          'Prepares deprecating the experiment: the test arm is discarded and the ad unit keeps its current ' +
+          'configuration. Writes nothing: pass plan_token to apply_change after the user agrees.',
+        inputSchema: planExperimentActionInput,
+        annotations: planAnnotations,
+      },
+      async (args, ctx) =>
+        runReportTool(deps, 'plan_experiment_deprecation', 'json', async () =>
+          planResponse(
+            await changes.plan(
+              { operation: 'deprecate_experiment', adUnitId: args.ad_unit_id, reason: args.reason },
+              callContext(server, ctx),
+            ),
           ),
         ),
-      ),
-  );
+    );
 }
