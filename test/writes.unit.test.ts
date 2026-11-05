@@ -82,6 +82,8 @@ const cfg: WriteConfig = {
   confirmation: 'elicit',
   planTtlMs: 900_000,
   auditLogPath: '/dev/null',
+  promotionRequiresEvaluation: true,
+  evaluationMaxAgeMs: 172_800_000,
 };
 
 function input(over: Partial<PolicyInput>): PolicyInput {

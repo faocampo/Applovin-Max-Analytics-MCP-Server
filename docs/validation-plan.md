@@ -123,20 +123,32 @@ Restart the client after changing the settings. Then ask the agent to make each 
 
 ## M4 · Experiment-driven operations
 
+**M4 decisions: defaults applied, awaiting confirmation**
+
+| ID | Decision | Default in code | Setting |
+|---|---|---|---|
+| D4.1a | Primary metric | Revenue per 1,000 requests (ARPDAU needs user counts the API lacks) | — |
+| D4.1b | Max show-rate drop (UX proxy) | 5% relative | `APPLOVIN_EXP_MAX_SHOW_RATE_DROP_PCT` |
+| D4.1c | Max network fill-rate drop | 2 percentage points | `APPLOVIN_EXP_MAX_FILL_DROP_PP` |
+| D4.2a | Minimum duration | 7 matched days | `APPLOVIN_EXP_MIN_DAYS` |
+| D4.2b | Minimum sample | 100,000 requests per arm | `APPLOVIN_EXP_MIN_REQUESTS_PER_ARM` |
+| D4.2c | Give up after | 28 days with no detectable difference | `APPLOVIN_EXP_MAX_DAYS` |
+| D4.3 | Promotion gate | A `promote` evaluation from the last 48 h is required | `APPLOVIN_EXP_PROMOTION_REQUIRES_EVALUATION`, `..._MAX_AGE_HOURS` |
+
+If you want ARPDAU / IMPDAU (for example from Loomit or an MMP), M4 needs a DAU source per arm. That would be a new integration, not a setting.
+
 **Prerequisites**
-- One app with enough traffic to reach sample size in about 1–2 weeks.
-- An agreed metric definition: ARPDAU / IMPDAU source, and the DAU source.
+- One app with enough traffic to reach the minimum sample in 1–2 weeks. The test ad units from M3 are fine for the lifecycle tests (V4.1, V4.4); V4.2 and V4.3 need real traffic.
+- Writes enabled as in M3, with the test ad units in the allowlist.
 
 | ID | Test | How | Expected | Status |
 |---|---|---|---|---|
-| V4.1 | Experiment lifecycle | Create an experiment through plan/apply on a low-risk change. | Visible in the dashboard with the right arm configuration | ☐ |
-| V4.2 | Per-arm metrics | Compare the tool's per-arm metrics with the dashboard's experiment view. | They match | ☐ |
-| V4.3 | Evaluation verdicts | Review the verdict early (not enough data) and at the end. | Verdicts follow the evidence; guardrails are reported | ☐ |
-| V4.4 | Promote or deprecate | Apply the recommended decision through plan/apply. | The dashboard reflects it; audit log entry | ☐ |
-
-**Decisions needed**
-- D4.1: Guardrail thresholds for promotion: maximum drop in requests, fill rate and impressions per user (UX proxy).
-- D4.2: Minimum experiment duration and minimum sample size.
+| V4.1 | **Experiment request format** | Ask the agent to *"test a 10% higher US floor on <test unit>"*. It should use `plan_experiment`; then apply it. | The experiment appears in the dashboard with the right test-arm configuration. **If create, promote or deprecate is rejected, report the error: the request bodies are assumptions.** | ☐ |
+| V4.2 | **Arm identification** | After a few days of traffic, run `evaluate_experiment`. Compare its arm names and per-arm requests and revenue with the dashboard's experiment view. | Arms found automatically, and per-arm numbers match the dashboard. If the arms show up under a dimension other than `ad_unit_waterfall_name`, report which one. | ☐ |
+| V4.3 | Verdict quality | Run `evaluate_experiment` early (expect `not_enough_data`), then after the minimum duration. | The verdict follows the evidence; the guardrails and reasons make sense to you | ☐ |
+| V4.4 | Promote or deprecate | Ask the agent to act on the recommendation (`plan_experiment_promotion` or `plan_experiment_deprecation`), then apply it. | The dashboard reflects the decision. Promotion without a recent `promote` evaluation is refused. | ☐ |
+| V4.5 | Promotion rollback | Roll back a promotion. | The pre-promotion configuration is restored | ☐ |
+| V4.6 | Playbooks | In Claude, use the `experiment_review` and `floor_tuning` prompts on a real ad unit. | The agent follows the steps and stops at a plan without applying | ☐ |
 
 ---
 

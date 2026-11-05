@@ -6,8 +6,10 @@ import { createRedactor, type Redactor } from './applovin/redact.js';
 import { ReportingApi } from './applovin/reporting.js';
 import type { Config } from './config.js';
 import { createLogger, type Logger } from './logger.js';
+import { registerPlaybooks } from './prompts/playbooks.js';
 import { registerCohortReportTool } from './tools/cohortReport.js';
 import type { ToolDeps } from './tools/common.js';
+import { registerExperimentTools } from './tools/experiments.js';
 import { registerManagementTools } from './tools/management.js';
 import { registerRevenueReportTool } from './tools/revenueReport.js';
 import { registerWriteTools } from './tools/writes.js';
@@ -89,6 +91,7 @@ export function createRuntime(config: Config, overrides: RuntimeOverrides = {}):
       reporting,
       management,
       changes,
+      experiments: config.experiments,
       logger,
       redact,
       shape: { maxRows: config.maxRows, maxBytes: config.maxResponseBytes },
@@ -108,24 +111,32 @@ export function serverInstructions(deps: ToolDeps): string {
   }
   const config =
     `${base} For configuration, start with list_ad_units to find ad unit ids, then get_ad_unit ` +
-    'or audit_ad_unit.';
+    'or audit_ad_unit. Use evaluate_experiment to judge A/B tests. Prompts provide playbooks ' +
+    '(floor_tuning, waterfall_audit, network_onboarding, experiment_review).';
   if (!deps.changes)
     return `${config} Writes are disabled: nothing on this server can change the MAX configuration.`;
   return (
     `${config} Changes follow plan -> human review -> apply: call plan_change, show the user the ` +
     'diff and guardrail results, and only then apply_change (the user is asked to confirm). ' +
-    'Never apply a plan the user has not seen. Every change can be undone with rollback_change.'
+    'Never apply a plan the user has not seen. Prefer testing revenue-affecting changes with ' +
+    'plan_experiment, then evaluate_experiment before plan_experiment_promotion. Most changes can ' +
+    'be undone with rollback_change.'
   );
 }
 
 export function createServer(deps: ToolDeps): McpServer {
   const server = new McpServer(
     { name: SERVER_NAME, version: SERVER_VERSION },
-    { capabilities: { tools: {} }, instructions: serverInstructions(deps) },
+    {
+      capabilities: { tools: {}, ...(deps.management && { prompts: {} }) },
+      instructions: serverInstructions(deps),
+    },
   );
   registerRevenueReportTool(server, deps);
   registerCohortReportTool(server, deps);
   registerManagementTools(server, deps);
   registerWriteTools(server, deps);
+  registerExperimentTools(server, deps);
+  registerPlaybooks(server, deps);
   return server;
 }

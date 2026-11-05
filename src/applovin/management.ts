@@ -168,6 +168,49 @@ export class ManagementApi {
     }
   }
 
+  /**
+   * Creates an experiment (test arm) for an ad unit with no active experiment.
+   * AppLovin starts the arm as a copy of the parent; `fields` override it.
+   */
+  createExperiment(
+    adUnitId: string,
+    fields: Record<string, unknown>,
+    opts: { signal?: AbortSignal | undefined } = {},
+  ): Promise<unknown> {
+    return this.write(
+      `/ad_unit_experiment/${assertId(adUnitId, 'ad_unit_id')}`,
+      { id: adUnitId, ...fields },
+      opts,
+    );
+  }
+
+  /** Promotes (test arm becomes the ad unit) or deprecates (test arm is discarded) an experiment. */
+  experimentAction(
+    adUnitId: string,
+    action: 'promote' | 'deprecate',
+    opts: { signal?: AbortSignal | undefined } = {},
+  ): Promise<unknown> {
+    const req = experimentActionRequest(assertId(adUnitId, 'ad_unit_id'), action);
+    return this.write(req.path, req.body, opts);
+  }
+
+  private async write(
+    path: string,
+    body: Record<string, unknown>,
+    opts: { signal?: AbortSignal | undefined },
+  ): Promise<unknown> {
+    const url = new URL(`${this.options.baseUrl}${path}`);
+    try {
+      const res = await this.options.http.postJson(url, body, {
+        ...(opts.signal && { signal: opts.signal }),
+        headers: { 'Api-Key': this.options.key },
+      });
+      return res.body.trim() === '' ? {} : parseJsonBody(res.body, path);
+    } finally {
+      this.invalidate();
+    }
+  }
+
   /** Drops cached reads. */
   invalidate(): void {
     this.cache.clear();
@@ -205,6 +248,19 @@ export class ManagementApi {
     }
     return value;
   }
+}
+
+/**
+ * Request for promoting or deprecating an experiment. AppLovin documents both
+ * as a POST on the ad unit experiment; the exact body is an assumption until
+ * validation test V4.1 confirms it against a live account. Kept in one place
+ * so the fix, if needed, is one line.
+ */
+export function experimentActionRequest(
+  adUnitId: string,
+  action: 'promote' | 'deprecate',
+): { path: string; body: Record<string, unknown> } {
+  return { path: `/ad_unit_experiment/${adUnitId}`, body: { id: adUnitId, action } };
 }
 
 export interface ReadOptions {

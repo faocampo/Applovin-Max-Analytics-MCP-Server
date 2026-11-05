@@ -85,7 +85,7 @@ export function confirmationMessage(plan: Plan): string {
   ].join('\n');
 }
 
-function callContext(server: McpServer, ctx: ServerContext): CallContext {
+export function callContext(server: McpServer, ctx: ServerContext): CallContext {
   const client = (
     server as unknown as {
       server?: { getClientVersion?: () => { name?: string; version?: string } | undefined };

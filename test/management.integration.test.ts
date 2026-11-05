@@ -100,6 +100,7 @@ describe('management tools', () => {
     expect(tools.map((t) => t.name).sort()).toEqual([
       'audit_ad_unit',
       'cohort_request',
+      'evaluate_experiment',
       'get_ad_unit',
       'get_ad_unit_experiment',
       'list_ad_units',

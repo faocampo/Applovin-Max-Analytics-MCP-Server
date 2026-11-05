@@ -12,6 +12,14 @@ describe('loadConfig', () => {
       maxRows: 500,
       maxResponseBytes: 200_000,
       logLevel: 'info',
+      experiments: {
+        minDays: 7,
+        minRequestsPerArm: 100_000,
+        minDailyRequests: 1_000,
+        maxShowRateDropPct: 5,
+        maxFillRateDropPp: 2,
+        maxDays: 28,
+      },
     });
   });
 

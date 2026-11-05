@@ -4,6 +4,7 @@ import { ApplovinError, recoveryHint } from '../applovin/errors.js';
 import type { ManagementApi } from '../applovin/management.js';
 import type { Redactor } from '../applovin/redact.js';
 import type { OutputFormat, ReportingApi } from '../applovin/reporting.js';
+import type { EvaluationThresholds } from '../experiments/evaluate.js';
 import type { Logger } from '../logger.js';
 import { type ShapeOptions, shapeResponse } from '../shaping.js';
 import type { ChangeService } from '../writes/changeService.js';
@@ -14,6 +15,7 @@ export interface ToolDeps {
   management?: ManagementApi | undefined;
   /** Present only when writes are enabled. */
   changes?: ChangeService | undefined;
+  experiments: EvaluationThresholds;
   logger: Logger;
   redact: Redactor;
   shape: ShapeOptions;

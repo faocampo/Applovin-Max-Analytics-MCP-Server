@@ -20,6 +20,8 @@ const cfg: WriteConfig = {
   confirmation: 'none',
   planTtlMs: 60_000,
   auditLogPath: '',
+  promotionRequiresEvaluation: true,
+  evaluationMaxAgeMs: 172_800_000,
 };
 
 function service(

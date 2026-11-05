@@ -461,6 +461,7 @@ describe('confirmationMessage', () => {
     }));
     const msg = confirmationMessage({
       plan_id: 'chg_x',
+      operation: 'update_ad_unit',
       kind: 'change',
       target: { ad_unit_id: 'au1' },
       reason: 'r',

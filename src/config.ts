@@ -1,6 +1,7 @@
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { z } from 'zod';
+import { DEFAULT_THRESHOLDS, type EvaluationThresholds } from './experiments/evaluate.js';
 import { LOG_LEVELS, type LogLevel } from './logger.js';
 
 export interface Config {
@@ -20,6 +21,8 @@ export interface Config {
   management: ManagementConfig | undefined;
   /** Present only when writes are explicitly enabled; enables M3 tools. */
   writes: WriteConfig | undefined;
+  /** Thresholds for evaluate_experiment (decisions D4.1 / D4.2). */
+  experiments: EvaluationThresholds;
 }
 
 export type ConfirmationMode = 'elicit' | 'none';
@@ -35,6 +38,9 @@ export interface WriteConfig {
   confirmation: ConfirmationMode;
   planTtlMs: number;
   auditLogPath: string;
+  /** Promotion needs a recent evaluate_experiment recommending "promote". */
+  promotionRequiresEvaluation: boolean;
+  evaluationMaxAgeMs: number;
 }
 
 export interface ManagementConfig {
@@ -101,6 +107,21 @@ const EnvSchema = z.object({
   APPLOVIN_WRITE_CONFIRMATION: z.enum(['elicit', 'none']).optional().default('elicit'),
   APPLOVIN_WRITE_PLAN_TTL_MS: intFromEnv(60_000, 86_400_000, 900_000),
   APPLOVIN_AUDIT_LOG: z.string().trim().min(1).optional(),
+  APPLOVIN_EXP_MIN_DAYS: intFromEnv(1, 90, DEFAULT_THRESHOLDS.minDays),
+  APPLOVIN_EXP_MIN_REQUESTS_PER_ARM: intFromEnv(
+    0,
+    1_000_000_000,
+    DEFAULT_THRESHOLDS.minRequestsPerArm,
+  ),
+  APPLOVIN_EXP_MIN_DAILY_REQUESTS: intFromEnv(0, 100_000_000, DEFAULT_THRESHOLDS.minDailyRequests),
+  APPLOVIN_EXP_MAX_SHOW_RATE_DROP_PCT: intFromEnv(0, 100, DEFAULT_THRESHOLDS.maxShowRateDropPct),
+  APPLOVIN_EXP_MAX_FILL_DROP_PP: intFromEnv(0, 100, DEFAULT_THRESHOLDS.maxFillRateDropPp),
+  APPLOVIN_EXP_MAX_DAYS: intFromEnv(7, 365, DEFAULT_THRESHOLDS.maxDays),
+  APPLOVIN_EXP_PROMOTION_REQUIRES_EVALUATION: z
+    .enum(['true', 'false', '1', '0'])
+    .optional()
+    .transform((v) => v === undefined || v === 'true' || v === '1'),
+  APPLOVIN_EXP_EVALUATION_MAX_AGE_HOURS: intFromEnv(1, 720, 48),
 });
 
 export class ConfigError extends Error {
@@ -166,7 +187,17 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
           confirmation: e.APPLOVIN_WRITE_CONFIRMATION,
           planTtlMs: e.APPLOVIN_WRITE_PLAN_TTL_MS,
           auditLogPath: e.APPLOVIN_AUDIT_LOG ?? join(homedir(), '.applovin-max-mcp', 'audit.jsonl'),
+          promotionRequiresEvaluation: e.APPLOVIN_EXP_PROMOTION_REQUIRES_EVALUATION,
+          evaluationMaxAgeMs: e.APPLOVIN_EXP_EVALUATION_MAX_AGE_HOURS * 3_600_000,
         }
       : undefined,
+    experiments: {
+      minDays: e.APPLOVIN_EXP_MIN_DAYS,
+      minRequestsPerArm: e.APPLOVIN_EXP_MIN_REQUESTS_PER_ARM,
+      minDailyRequests: e.APPLOVIN_EXP_MIN_DAILY_REQUESTS,
+      maxShowRateDropPct: e.APPLOVIN_EXP_MAX_SHOW_RATE_DROP_PCT,
+      maxFillRateDropPp: e.APPLOVIN_EXP_MAX_FILL_DROP_PP,
+      maxDays: e.APPLOVIN_EXP_MAX_DAYS,
+    },
   };
 }

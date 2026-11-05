@@ -16,7 +16,15 @@ export interface PolicyResult {
   message: string;
 }
 
+export type OperationType =
+  | 'update_ad_unit'
+  | 'create_experiment'
+  | 'promote_experiment'
+  | 'deprecate_experiment';
+
 export interface PolicyInput {
+  /** Defaults to update_ad_unit. */
+  operation?: OperationType;
   adUnitId: string;
   hasActiveExperiment: boolean | undefined;
   /** Current values of the touched fields. */
@@ -26,6 +34,10 @@ export interface PolicyInput {
   diff: DiffEntry[];
   /** Rollbacks restore a previously applied state; size limits do not apply. */
   isRollback: boolean;
+  /** Latest evaluation of the ad unit's experiment, for promotions. */
+  evaluation?: { recommendation: string; ts: string } | undefined;
+  /** Whether the promotion gate is on, and how old an evaluation may be. */
+  promotionGate?: { required: boolean; maxAgeMs: number; now: number } | undefined;
 }
 
 const pass = (id: string, message: string): PolicyResult => ({ id, passed: true, message });
@@ -60,17 +72,69 @@ export function disabledNetworks(input: PolicyInput, diff: DiffEntry[]): string[
 }
 
 export function evaluatePolicies(input: PolicyInput, cfg: WriteConfig): PolicyResult[] {
-  const fields = Object.keys(input.after) as WritableField[];
-  const results: PolicyResult[] = [];
+  switch (input.operation ?? 'update_ad_unit') {
+    case 'update_ad_unit':
+      return updatePolicies(input, cfg, false);
+    case 'create_experiment':
+      return updatePolicies(input, cfg, true);
+    case 'promote_experiment':
+      return promotePolicies(input, cfg);
+    case 'deprecate_experiment':
+      return [allowlist(input, cfg), experimentActive(input)];
+  }
+}
 
-  results.push(
-    cfg.allowlist.includes(input.adUnitId)
-      ? pass('ad_unit_allowlist', 'Ad unit is in the write allowlist.')
-      : fail(
-          'ad_unit_allowlist',
-          'Ad unit is not in APPLOVIN_WRITE_ALLOWLIST. A human must add it before it can be changed.',
-        ),
-  );
+function allowlist(input: PolicyInput, cfg: WriteConfig): PolicyResult {
+  return cfg.allowlist.includes(input.adUnitId)
+    ? pass('ad_unit_allowlist', 'Ad unit is in the write allowlist.')
+    : fail(
+        'ad_unit_allowlist',
+        'Ad unit is not in APPLOVIN_WRITE_ALLOWLIST. A human must add it before it can be changed.',
+      );
+}
+
+function experimentActive(input: PolicyInput): PolicyResult {
+  return input.hasActiveExperiment
+    ? pass('experiment_active', 'The ad unit has an active experiment.')
+    : fail('experiment_active', 'The ad unit has no active experiment.');
+}
+
+function promotePolicies(input: PolicyInput, cfg: WriteConfig): PolicyResult[] {
+  const results = [allowlist(input, cfg), experimentActive(input)];
+  const gate = input.promotionGate;
+  if (gate?.required) {
+    const ev = input.evaluation;
+    const age = ev ? gate.now - Date.parse(ev.ts) : Number.POSITIVE_INFINITY;
+    results.push(
+      ev && ev.recommendation === 'promote' && age <= gate.maxAgeMs
+        ? pass('evaluation_supports_promotion', `Evaluation from ${ev.ts} recommends promotion.`)
+        : fail(
+            'evaluation_supports_promotion',
+            ev
+              ? age > gate.maxAgeMs
+                ? `The latest evaluation (${ev.ts}) is too old. Run evaluate_experiment again.`
+                : `The latest evaluation recommends "${ev.recommendation}", not "promote".`
+              : 'No evaluation recorded. Run evaluate_experiment first; promotion needs a "promote" recommendation.',
+          ),
+    );
+  }
+  if ('ad_network_settings' in input.after) {
+    const remaining = networkNames(input.after.ad_network_settings).length;
+    results.push(
+      remaining > 0
+        ? pass('keeps_active_network', `${remaining} network(s) stay configured.`)
+        : fail(
+            'keeps_active_network',
+            'The test arm has no ad network; promoting it would stop ad serving.',
+          ),
+    );
+  }
+  return results;
+}
+
+function updatePolicies(input: PolicyInput, cfg: WriteConfig, isCreate: boolean): PolicyResult[] {
+  const fields = Object.keys(input.after) as WritableField[];
+  const results: PolicyResult[] = [allowlist(input, cfg)];
 
   results.push(
     input.diff.length > 0
@@ -93,7 +157,7 @@ export function evaluatePolicies(input: PolicyInput, cfg: WriteConfig): PolicyRe
   }
 
   results.push(
-    !input.hasActiveExperiment || cfg.allowDuringExperiment
+    !input.hasActiveExperiment || (cfg.allowDuringExperiment && !isCreate)
       ? pass(
           'no_active_experiment',
           input.hasActiveExperiment
@@ -102,7 +166,9 @@ export function evaluatePolicies(input: PolicyInput, cfg: WriteConfig): PolicyRe
         )
       : fail(
           'no_active_experiment',
-          'The ad unit has an active experiment; changing it would contaminate the results. Conclude the experiment first.',
+          isCreate
+            ? 'The ad unit already has an active experiment; AppLovin allows one at a time. Promote or deprecate it first.'
+            : 'The ad unit has an active experiment; changing it would contaminate the results. Conclude the experiment first.',
         ),
   );
 

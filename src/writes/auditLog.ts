@@ -2,13 +2,19 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import type { Redactor } from '../applovin/redact.js';
 
-export type AuditEvent = 'plan_created' | 'apply_refused' | 'apply_succeeded' | 'apply_failed';
+export type AuditEvent =
+  | 'plan_created'
+  | 'apply_refused'
+  | 'apply_succeeded'
+  | 'apply_failed'
+  | 'experiment_evaluated';
 
 export interface AuditRecord {
   ts: string;
   event: AuditEvent;
   plan_id: string;
   kind: 'change' | 'rollback';
+  operation?: string | undefined;
   rollback_of?: string | undefined;
   ad_unit_id: string;
   segment_id?: string | undefined;
@@ -24,6 +30,8 @@ export interface AuditRecord {
   /** True when a write failed in a way that may or may not have changed AppLovin. */
   outcome_unknown?: boolean;
   verification?: unknown;
+  /** experiment_evaluated only: verdict and recommendation. */
+  evaluation?: { verdict: string; recommendation: string; start: string; end: string } | undefined;
 }
 
 /**
@@ -62,6 +70,13 @@ export class AuditLog {
           return [];
         }
       });
+  }
+
+  /** Most recent experiment evaluation recorded for an ad unit. */
+  latestEvaluation(adUnitId: string): AuditRecord | undefined {
+    return this.readAll()
+      .filter((r) => r.event === 'experiment_evaluated' && r.ad_unit_id === adUnitId)
+      .at(-1);
   }
 
   /** The successful apply that created `changeId`, if any. */

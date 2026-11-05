@@ -4,10 +4,11 @@ A [Model Context Protocol](https://modelcontextprotocol.io) server that gives AI
 (Claude and any other MCP client) read access to AppLovin MAX mediation analytics:
 aggregated revenue reporting and install-cohort reports.
 
-> **Status: Milestones 1–3 of the [roadmap](docs/roadmap.md).**
+> **Status: Milestones 1–4 of the [roadmap](docs/roadmap.md).**
 > - M1 hardened the read-only reporting foundation.
 > - M2 added read-only visibility into ad unit configuration (waterfalls, floors, segments, experiments) and an audit that joins configuration with performance.
 > - M3 added guarded writes: plan → human confirmation → apply → rollback.
+> - M4 added A/B experiments (create, evaluate, promote, deprecate) and playbook prompts.
 >
 > **Writes are off by default.** They need `APPLOVIN_ENABLE_WRITES=true` and an explicit allowlist of ad units. The write path has not yet been validated against a live account: use a dedicated test app first.
 >
@@ -118,6 +119,32 @@ next plan reads fresh state.
 client name/version, the reason, the diff, the guardrail results and the before/after values
 that rollbacks use. Plan tokens are never logged.
 
+### Experiments (M4)
+
+| Tool | Needs | Purpose |
+|---|---|---|
+| `evaluate_experiment` | Management Key | Compares the test arm with control on matched days. Read-only. |
+| `plan_experiment` | writes enabled | Plans an A/B test: the test arm is the current configuration plus your changes. Same guardrails as `plan_change`; one experiment per ad unit. |
+| `plan_experiment_promotion` | writes enabled | Plans making the test arm the ad unit's configuration. By default requires an evaluation from the last 48 h recommending `promote`. Rolling it back restores the pre-promotion configuration. |
+| `plan_experiment_deprecation` | writes enabled | Plans discarding the test arm. Cannot be rolled back. |
+
+All plans are applied with `apply_change`, so they get the same confirmation, drift check and audit.
+
+**How an experiment is judged**
+- **Primary metric:** revenue per 1,000 requests (RPM), per day and per arm. Normalising per request keeps the comparison fair whatever the traffic split.
+- **Method:** a paired daily difference, test minus control, with a two-sided 95% t-interval. The verdict is `better`, `worse`, `no_detectable_difference` or `not_enough_data`.
+- **Guardrails:** show rate (impressions/requests) must not drop more than 5%; network fill rate (responses/attempts) must not drop more than 2 pp; no single day may carry more than 50% of an arm's revenue. Outlier days are found with a robust modified z-score.
+- **Recommendation:**
+  - `promote` only if revenue is better *and* every guardrail passes *and* there are no outliers;
+  - `human_review` if revenue is better but something else fails;
+  - `deprecate` if revenue is worse, or there is no difference after 28 days;
+  - otherwise `continue`.
+- **Limits:**
+  - The reporting API exposes no user counts, so ARPDAU and IMPDAU cannot be computed. RPM and show rate are their per-traffic equivalents.
+  - Arms are identified through a reporting dimension, `ad_unit_waterfall_name` by default. Confirm this in validation test V4.2.
+
+**Playbook prompts** (MCP prompts, available with a Management Key): `floor_tuning`, `waterfall_audit`, `network_onboarding`, `experiment_review`. Each one guides the agent through the existing tools and stops at a plan. None of them applies anything.
+
 ## Setup
 
 Requirements: Node.js 20+ and an AppLovin MAX **Report Key** (MAX dashboard → Account → Keys).
@@ -166,6 +193,14 @@ npm run build
 | `APPLOVIN_WRITE_CONFIRMATION` | `elicit` | `elicit` asks the user before every apply; `none` is for automated tests only |
 | `APPLOVIN_WRITE_PLAN_TTL_MS` | `900000` | Plan token lifetime (15 min) |
 | `APPLOVIN_AUDIT_LOG` | `~/.applovin-max-mcp/audit.jsonl` | Audit log path |
+| `APPLOVIN_EXP_MIN_DAYS` | `7` | Matched days before any experiment verdict |
+| `APPLOVIN_EXP_MIN_REQUESTS_PER_ARM` | `100000` | Requests per arm before any verdict |
+| `APPLOVIN_EXP_MIN_DAILY_REQUESTS` | `1000` | Days below this in either arm are excluded |
+| `APPLOVIN_EXP_MAX_SHOW_RATE_DROP_PCT` | `5` | Guardrail: max relative show-rate drop |
+| `APPLOVIN_EXP_MAX_FILL_DROP_PP` | `2` | Guardrail: max fill-rate drop, percentage points |
+| `APPLOVIN_EXP_MAX_DAYS` | `28` | No difference after this many days → recommend deprecation |
+| `APPLOVIN_EXP_PROMOTION_REQUIRES_EVALUATION` | `true` | Promotion needs a recent `promote` recommendation |
+| `APPLOVIN_EXP_EVALUATION_MAX_AGE_HOURS` | `48` | How recent that evaluation must be |
 
 The server fails fast at startup if the configuration is invalid.
 
@@ -201,7 +236,10 @@ src/
     reporting.ts        report/cohort domain, validation, query builders
     management.ts       Ad Unit Management API reads, id validation, TTL cache
     audit.ts            pure configuration x performance analysis
-  writes/               M3 write path, no MCP types
+  experiments/          M4 experiment statistics (pure)
+    evaluate.ts         paired RPM test, guardrails, robust outliers, arm identification
+  prompts/              M4 playbook prompts
+  writes/               M3/M4 write path, no MCP types
     changeService.ts    plan / apply / rollback orchestration
     policy.ts           guardrails
     diff.ts             canonical JSON, state hash, identity-aware diff
@@ -224,6 +262,8 @@ and [docs/validation-plan.md](docs/validation-plan.md) tracks the results:
 - The 45-day maximum range for cohort requests.
 - Management API response schemas (ad network settings, bid floors, segments, experiments).
 - Management API update requests: `POST /ad_unit/{id}` (or `/{segment_id}`) with `{ id, ...fields }`, changing only the fields sent.
+- Experiment requests: `POST /ad_unit_experiment/{id}` with `{ id, ...fields }` to create, and `{ id, action: "promote" | "deprecate" }` to conclude (`experimentActionRequest` in `src/applovin/management.ts`). A missing experiment answers 404.
+- Experiment arms appear in reporting under `ad_unit_waterfall_name`.
 
 ## Changes from the Go proof of concept
 
