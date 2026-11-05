@@ -239,21 +239,21 @@ describe('policies', () => {
 describe('AuditLog', () => {
   const dir = () => mkdtempSync(join(tmpdir(), 'audit-'));
 
-  it('appends redacted JSON lines and reads them back', () => {
+  it('appends redacted JSON lines and reads them back', async () => {
     const path = join(dir(), 'nested', 'audit.jsonl');
     const log = new AuditLog(
       path,
       createRedactor(['secret_value_123']),
       () => new Date('2026-11-05T00:00:00Z'),
     );
-    log.append({
+    await log.append({
       event: 'plan_created',
       plan_id: 'chg_1',
       kind: 'change',
       ad_unit_id: 'au1',
       detail: 'key secret_value_123',
     });
-    log.append({
+    await log.append({
       event: 'apply_succeeded',
       plan_id: 'chg_1',
       kind: 'change',
@@ -262,11 +262,13 @@ describe('AuditLog', () => {
     });
     expect(readFileSync(path, 'utf8')).not.toContain('secret_value_123');
     expect(log.readAll()).toHaveLength(2);
-    expect(log.findApplied('chg_1')).toMatchObject({
+    expect(await log.findApplied('chg_1')).toMatchObject({
       ts: '2026-11-05T00:00:00.000Z',
       before: { a: 1 },
     });
-    expect(log.findApplied('chg_2')).toBeUndefined();
+    expect(await log.findApplied('chg_2')).toBeUndefined();
+    expect(await log.listApplied({ limit: 5 })).toHaveLength(1);
+    expect(await log.rolledBackBy(['chg_1'])).toEqual(new Map());
     expect(log.location).toBe(path);
     expect(statSync(path).mode & 0o777).toBe(0o600);
   });

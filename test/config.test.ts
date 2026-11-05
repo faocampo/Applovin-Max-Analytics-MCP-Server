@@ -12,6 +12,11 @@ describe('loadConfig', () => {
       maxRows: 500,
       maxResponseBytes: 200_000,
       logLevel: 'info',
+      managementSettings: {
+        baseUrl: 'https://o.applovin.com/mediation/v1',
+        requestsPerHour: 1000,
+        cacheTtlMs: 60_000,
+      },
       experiments: {
         minDays: 7,
         minRequestsPerArm: 100_000,

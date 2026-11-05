@@ -2,7 +2,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { ApplovinError, validationError } from '../applovin/errors.js';
 import { EXPERIMENT_FIELDS, type ManagementApi, summarizeAdUnit } from '../applovin/management.js';
 import type { WriteConfig } from '../config.js';
-import type { AuditLog, AuditRecord } from './auditLog.js';
+import type { AuditRecord } from './auditLog.js';
 import { canonicalJson, type DiffEntry, diffJson, stateHash } from './diff.js';
 import {
   evaluatePolicies,
@@ -11,6 +11,7 @@ import {
   WRITABLE_FIELDS,
   type WritableField,
 } from './policy.js';
+import { type AuditStore, MemoryPlanStore, type PlanStore } from './stores.js';
 
 export type { OperationType } from './policy.js';
 
@@ -89,11 +90,6 @@ export interface PlanRequest {
   rollbackOf?: string | undefined;
 }
 
-interface StoredPlan {
-  plan: Plan;
-  used: boolean;
-}
-
 interface LiveState {
   /** Parent (or segment) values of the relevant fields. */
   values: Record<string, unknown>;
@@ -107,7 +103,11 @@ interface LiveState {
 export interface ChangeServiceOptions {
   management: ManagementApi;
   config: WriteConfig;
-  audit: AuditLog;
+  audit: AuditStore;
+  /** Defaults to an in-memory store (single process). */
+  plans?: PlanStore;
+  /** Recorded on every audit record (multi-tenant deployments). */
+  tenant?: string;
   now?: () => number;
 }
 
@@ -143,11 +143,12 @@ const ROLLBACK_HINT: Record<OperationType, (id: string) => string> = {
  * Every step is recorded in the audit log.
  */
 export class ChangeService {
-  private readonly plans = new Map<string, StoredPlan>();
+  private readonly plans: PlanStore;
   private readonly now: () => number;
 
   constructor(private readonly options: ChangeServiceOptions) {
     this.now = options.now ?? Date.now;
+    this.plans = options.plans ?? new MemoryPlanStore(this.now);
   }
 
   get auditLogPath(): string {
@@ -203,7 +204,7 @@ export class ChangeService {
     const kind = req.kind ?? 'change';
     const latest =
       operation === 'promote_experiment'
-        ? this.options.audit.latestEvaluation(req.adUnitId)
+        ? await this.options.audit.latestEvaluation(req.adUnitId)
         : undefined;
     const policies = evaluatePolicies(
       {
@@ -244,30 +245,34 @@ export class ChangeService {
       allowed: policies.every((p) => p.passed),
     };
 
-    this.audit('plan_created', plan, ctx, { before, after, diff, policies, allowed: plan.allowed });
+    await this.audit('plan_created', plan, ctx, {
+      before,
+      after,
+      diff,
+      policies,
+      allowed: plan.allowed,
+    });
 
     if (!plan.allowed) return plan;
     const token = randomBytes(24).toString('base64url');
-    this.plans.set(token, { plan, used: false });
-    this.prune();
+    await this.plans.put(token, plan);
     return { ...plan, token };
   }
 
   async apply(token: string, ctx: CallContext = {}): Promise<ApplyResult> {
-    const stored = this.plans.get(token);
-    if (!stored) {
+    // take() marks the token used atomically, so concurrent applies cannot both proceed.
+    const taken = await this.plans.take(token);
+    if (taken.status === 'unknown') {
       throw refused('Unknown or expired plan token. Create a new plan.');
     }
-    const { plan } = stored;
-    if (stored.used) {
-      this.audit('apply_refused', plan, ctx, { detail: 'token already used' });
+    const { plan } = taken;
+    if (taken.status === 'used') {
+      await this.audit('apply_refused', plan, ctx, { detail: 'token already used' });
       throw refused('This plan token was already used. Create a new plan.');
     }
-    // Single use from here on, so concurrent applies cannot both proceed.
-    stored.used = true;
 
     if (Date.parse(plan.expires_at) <= this.now()) {
-      this.audit('apply_refused', plan, ctx, { detail: 'plan expired' });
+      await this.audit('apply_refused', plan, ctx, { detail: 'plan expired' });
       throw refused('The plan expired. Create a new plan so it reflects the current state.');
     }
 
@@ -278,7 +283,7 @@ export class ChangeService {
           outcome === 'declined'
             ? 'human declined'
             : 'client cannot ask a human for confirmation (no elicitation support)';
-        this.audit('apply_refused', plan, ctx, { detail });
+        await this.audit('apply_refused', plan, ctx, { detail });
         throw refused(
           outcome === 'declined'
             ? 'The change was not approved by the user. Nothing was changed.'
@@ -295,7 +300,7 @@ export class ChangeService {
       ctx.signal,
     );
     if (current.hash !== plan.before_hash) {
-      this.audit('apply_refused', plan, ctx, { detail: 'state changed since plan (drift)' });
+      await this.audit('apply_refused', plan, ctx, { detail: 'state changed since plan (drift)' });
       throw refused(
         'The ad unit changed since this plan was made (someone edited it, or another change was applied). Nothing was changed. Create a new plan from the current state.',
       );
@@ -307,7 +312,7 @@ export class ChangeService {
       const e = err instanceof ApplovinError ? err : undefined;
       const outcomeUnknown =
         !e || e.kind === 'timeout' || e.kind === 'network' || (e.status ?? 0) >= 500;
-      this.audit('apply_failed', plan, ctx, {
+      await this.audit('apply_failed', plan, ctx, {
         detail: e ? `${e.kind}: ${e.message}` : 'unexpected error',
         outcome_unknown: outcomeUnknown,
       });
@@ -322,7 +327,7 @@ export class ChangeService {
     }
 
     const verification = await this.verify(plan, ctx.signal);
-    this.audit('apply_succeeded', plan, ctx, {
+    await this.audit('apply_succeeded', plan, ctx, {
       before: plan.before,
       after: plan.after,
       diff: plan.diff,
@@ -341,7 +346,7 @@ export class ChangeService {
   }
 
   async planRollback(changeId: string, reason: string, ctx: CallContext = {}) {
-    const applied = this.options.audit.findApplied(changeId);
+    const applied = await this.options.audit.findApplied(changeId);
     if (!applied?.before) {
       throw validationError(`No applied change with id ${changeId} in the audit log.`);
     }
@@ -375,12 +380,13 @@ export class ChangeService {
   }
 
   /** Records an evaluate_experiment result so promotions can be gated on it. */
-  recordEvaluation(
+  async recordEvaluation(
     adUnitId: string,
     evaluation: { verdict: string; recommendation: string; start: string; end: string },
     ctx: CallContext = {},
-  ): void {
-    this.options.audit.append({
+  ): Promise<void> {
+    await this.options.audit.append({
+      tenant: this.options.tenant,
       event: 'experiment_evaluated',
       plan_id: `eval_${randomUUID().replace(/-/g, '').slice(0, 16)}`,
       kind: 'change',
@@ -391,27 +397,25 @@ export class ChangeService {
     });
   }
 
-  listChanges(filter: { adUnitId?: string | undefined; limit: number }): ChangeSummary[] {
-    const records = this.options.audit.readAll().filter((r) => r.event === 'apply_succeeded');
-    const rolledBackBy = new Map<string, string>();
-    for (const r of records) if (r.rollback_of) rolledBackBy.set(r.rollback_of, r.plan_id);
-    return records
-      .filter((r) => !filter.adUnitId || r.ad_unit_id === filter.adUnitId)
-      .reverse()
-      .slice(0, filter.limit)
-      .map((r) => ({
-        change_id: r.plan_id,
-        ts: r.ts,
-        operation: r.operation ?? 'update_ad_unit',
-        kind: r.kind,
-        rollback_of: r.rollback_of,
-        ad_unit_id: r.ad_unit_id,
-        segment_id: r.segment_id,
-        fields: r.fields ?? [],
-        reason: r.reason,
-        client: r.client,
-        rolled_back_by: rolledBackBy.get(r.plan_id),
-      }));
+  async listChanges(filter: {
+    adUnitId?: string | undefined;
+    limit: number;
+  }): Promise<ChangeSummary[]> {
+    const records = await this.options.audit.listApplied(filter);
+    const rolledBackBy = await this.options.audit.rolledBackBy(records.map((r) => r.plan_id));
+    return records.map((r) => ({
+      change_id: r.plan_id,
+      ts: r.ts,
+      operation: r.operation ?? 'update_ad_unit',
+      kind: r.kind,
+      rollback_of: r.rollback_of,
+      ad_unit_id: r.ad_unit_id,
+      segment_id: r.segment_id,
+      fields: r.fields ?? [],
+      reason: r.reason,
+      client: r.client,
+      rolled_back_by: rolledBackBy.get(r.plan_id),
+    }));
   }
 
   private async write(plan: Plan, signal: AbortSignal | undefined): Promise<void> {
@@ -520,13 +524,14 @@ export class ChangeService {
     };
   }
 
-  private audit(
+  private async audit(
     event: AuditRecord['event'],
     plan: Plan,
     ctx: CallContext,
     extra: Partial<AuditRecord>,
-  ): void {
-    this.options.audit.append({
+  ): Promise<void> {
+    await this.options.audit.append({
+      tenant: this.options.tenant,
       event,
       plan_id: plan.plan_id,
       kind: plan.kind,
@@ -539,12 +544,5 @@ export class ChangeService {
       fields: plan.fields,
       ...extra,
     });
-  }
-
-  private prune(): void {
-    const now = this.now();
-    for (const [token, s] of this.plans) {
-      if (s.used || Date.parse(s.plan.expires_at) <= now) this.plans.delete(token);
-    }
   }
 }

@@ -89,6 +89,8 @@ export interface ManagementApiOptions {
   baseUrl: string;
   cacheTtlMs: number;
   now?: () => number;
+  /** Called on every cache lookup, for metrics. */
+  onCacheLookup?: (hit: boolean) => void;
 }
 
 interface CacheEntry {
@@ -229,7 +231,9 @@ export class ManagementApi {
 
     if (!opts.refresh && this.options.cacheTtlMs > 0) {
       const hit = this.cache.get(cacheKey);
-      if (hit && hit.expires > now) return hit.value;
+      const fresh = hit !== undefined && hit.expires > now;
+      this.options.onCacheLookup?.(fresh);
+      if (hit && fresh) return hit.value;
     }
 
     const value = this.options.http

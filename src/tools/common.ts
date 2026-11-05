@@ -6,8 +6,14 @@ import type { Redactor } from '../applovin/redact.js';
 import type { OutputFormat, ReportingApi } from '../applovin/reporting.js';
 import type { EvaluationThresholds } from '../experiments/evaluate.js';
 import type { Logger } from '../logger.js';
+import { type Metrics, noopMetrics } from '../observability/metrics.js';
+import { withSpan } from '../observability/tracing.js';
 import { type ShapeOptions, shapeResponse } from '../shaping.js';
 import type { ChangeService } from '../writes/changeService.js';
+
+export type Scope = 'read' | 'propose' | 'apply';
+
+export const can = (deps: ToolDeps, scope: Scope) => deps.allow?.(scope) ?? true;
 
 export interface ToolDeps {
   reporting: ReportingApi;
@@ -16,6 +22,11 @@ export interface ToolDeps {
   /** Present only when writes are enabled. */
   changes?: ChangeService | undefined;
   experiments: EvaluationThresholds;
+  metrics?: Metrics | undefined;
+  /** Tenant label for metrics and logs; `default` for single-tenant use. */
+  tenant?: string | undefined;
+  /** Scope check for multi-tenant HTTP; everything is allowed when absent (stdio). */
+  allow?: ((scope: Scope) => boolean) | undefined;
   logger: Logger;
   redact: Redactor;
   shape: ShapeOptions;
@@ -90,35 +101,47 @@ export async function runReportTool(
   call: () => Promise<{ body: string }>,
 ): Promise<CallToolResult> {
   const started = Date.now();
-  try {
-    const response = await call();
-    const shaped = shapeResponse(response.body, format, deps.shape);
-    deps.logger.info('tool call ok', {
-      tool,
-      durationMs: Date.now() - started,
-      rowsReturned: shaped.rowsReturned,
-      rowsTotal: shaped.rowsTotal,
-      truncated: shaped.truncated,
-    });
-    return { content: [{ type: 'text', text: shaped.text }] };
-  } catch (err) {
-    if (err instanceof ApplovinError) {
-      deps.logger.info('tool call failed', {
+  const tenant = deps.tenant ?? 'default';
+  const metrics = deps.metrics ?? noopMetrics;
+  const finish = (outcome: string) =>
+    metrics.toolCall(tool, tenant, outcome, (Date.now() - started) / 1000);
+  return withSpan(`mcp.tool ${tool}`, { 'mcp.tool': tool, 'mcp.tenant': tenant }, async () => {
+    try {
+      const response = await call();
+      const shaped = shapeResponse(response.body, format, deps.shape);
+      finish('ok');
+      deps.logger.info('tool call ok', {
         tool,
+        tenant,
         durationMs: Date.now() - started,
-        kind: err.kind,
-        status: err.status,
-        attempts: err.attempts,
+        rowsReturned: shaped.rowsReturned,
+        rowsTotal: shaped.rowsTotal,
+        truncated: shaped.truncated,
       });
-      return errorResult(deps.redact(`${err.message} ${recoveryHint(err)}`));
+      return { content: [{ type: 'text', text: shaped.text }] };
+    } catch (err) {
+      if (err instanceof ApplovinError) {
+        finish(err.kind);
+        deps.logger.info('tool call failed', {
+          tool,
+          tenant,
+          durationMs: Date.now() - started,
+          kind: err.kind,
+          status: err.status,
+          attempts: err.attempts,
+        });
+        return errorResult(deps.redact(`${err.message} ${recoveryHint(err)}`));
+      }
+      finish('crash');
+      deps.logger.error('tool call crashed', {
+        tool,
+        tenant,
+        durationMs: Date.now() - started,
+        error: err instanceof Error ? (err.stack ?? err.message) : String(err),
+      });
+      return errorResult('Internal error in the AppLovin MCP server. The error was logged.');
     }
-    deps.logger.error('tool call crashed', {
-      tool,
-      durationMs: Date.now() - started,
-      error: err instanceof Error ? (err.stack ?? err.message) : String(err),
-    });
-    return errorResult('Internal error in the AppLovin MCP server. The error was logged.');
-  }
+  });
 }
 
 export function errorResult(text: string): CallToolResult {

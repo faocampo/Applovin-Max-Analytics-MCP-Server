@@ -228,7 +228,7 @@ export function registerWriteTools(server: McpServer, deps: ToolDeps): void {
     },
     async (args) =>
       runReportTool(deps, 'list_changes', 'json', async () =>
-        json(changes.listChanges({ adUnitId: args.ad_unit_id, limit: args.limit })),
+        json(await changes.listChanges({ adUnitId: args.ad_unit_id, limit: args.limit })),
       ),
   );
 }

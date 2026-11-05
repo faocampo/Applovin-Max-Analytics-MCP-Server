@@ -122,7 +122,7 @@ describe('ChangeService', () => {
     });
     const plan = await svc.plan(req);
     await expect(svc.apply(plan.token as string)).rejects.toThrow(/cannot ask the user/);
-    expect(svc.listChanges({ limit: 10 })).toEqual([]);
+    expect(await svc.listChanges({ limit: 10 })).toEqual([]);
   });
 
   it('lists only applied changes, filtered and limited', async () => {
@@ -131,8 +131,8 @@ describe('ChangeService', () => {
     await svc.apply(a.token as string);
     const b = await svc.plan({ ...req, changes: { bid_floors: [{ country: 'US', cpm: 12 }] } });
     await svc.apply(b.token as string);
-    expect(svc.listChanges({ limit: 1 }).map((c) => c.change_id)).toEqual([b.plan_id]);
-    expect(svc.listChanges({ adUnitId: 'other', limit: 5 })).toEqual([]);
+    expect((await svc.listChanges({ limit: 1 })).map((c) => c.change_id)).toEqual([b.plan_id]);
+    expect(await svc.listChanges({ adUnitId: 'other', limit: 5 })).toEqual([]);
   });
 });
 
@@ -163,7 +163,7 @@ describe('write configuration', () => {
 
   it('requires a Management Key and an allowlist when enabled', () => {
     expect(() => loadConfig({ APPLOVIN_REPORT_KEY: 'k', APPLOVIN_ENABLE_WRITES: 'true' })).toThrow(
-      /APPLOVIN_MANAGEMENT_KEY, APPLOVIN_WRITE_ALLOWLIST/,
+      /requires APPLOVIN_MANAGEMENT_KEY\.\nAPPLOVIN_ENABLE_WRITES=true requires APPLOVIN_WRITE_ALLOWLIST/,
     );
     expect(() =>
       loadConfig({ ...base, APPLOVIN_ENABLE_WRITES: '1', APPLOVIN_WRITE_ALLOWLIST: 'bad id!' }),

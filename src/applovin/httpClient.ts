@@ -9,6 +9,13 @@ export interface HttpResponse {
   body: string;
 }
 
+export interface RequestObservation {
+  method: 'GET' | 'POST';
+  status: number | undefined;
+  kind: string | undefined;
+  durationMs: number;
+}
+
 export interface HttpClientOptions {
   timeoutMs: number;
   /** Retries after the first attempt, for network errors, timeouts, 429 and 5xx. */
@@ -21,6 +28,8 @@ export interface HttpClientOptions {
   random?: () => number;
   baseBackoffMs?: number;
   maxBackoffMs?: number;
+  /** Called once per attempt, for metrics. */
+  observe?: (o: RequestObservation) => void;
 }
 
 export interface RequestOptions {
@@ -39,8 +48,9 @@ const ERROR_SNIPPET_CHARS = 500;
  * ever surfaces redacted text.
  */
 export class ApplovinHttpClient {
-  private readonly opts: Required<Omit<HttpClientOptions, 'rateLimiter'>> & {
+  private readonly opts: Required<Omit<HttpClientOptions, 'rateLimiter' | 'observe'>> & {
     rateLimiter: RateLimiter | undefined;
+    observe: ((o: RequestObservation) => void) | undefined;
   };
 
   constructor(options: HttpClientOptions) {
@@ -53,6 +63,7 @@ export class ApplovinHttpClient {
       maxBackoffMs: 10_000,
       ...options,
       rateLimiter: options.rateLimiter,
+      observe: options.observe,
     };
   }
 
@@ -105,6 +116,12 @@ export class ApplovinHttpClient {
       }
 
       const durationMs = Date.now() - started;
+      this.opts.observe?.({
+        method,
+        status: outcome.status,
+        kind: outcome instanceof ApplovinError ? outcome.kind : undefined,
+        durationMs,
+      });
       if (!(outcome instanceof ApplovinError) && outcome.status >= 200 && outcome.status < 300) {
         logger.debug('applovin request ok', {
           method,

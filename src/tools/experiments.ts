@@ -180,7 +180,7 @@ export function registerExperimentTools(server: McpServer, deps: ToolDeps): void
           { name: picked.test, days: arms.get(picked.test) ?? [] },
           deps.experiments,
         );
-        deps.changes?.recordEvaluation(
+        await deps.changes?.recordEvaluation(
           args.ad_unit_id,
           {
             verdict: evaluation.verdict,

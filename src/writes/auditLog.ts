@@ -1,6 +1,7 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import type { Redactor } from '../applovin/redact.js';
+import type { AuditStore } from './stores.js';
 
 export type AuditEvent =
   | 'plan_created'
@@ -13,6 +14,8 @@ export interface AuditRecord {
   ts: string;
   event: AuditEvent;
   plan_id: string;
+  /** Tenant the record belongs to (multi-tenant deployments). */
+  tenant?: string | undefined;
   kind: 'change' | 'rollback';
   operation?: string | undefined;
   rollback_of?: string | undefined;
@@ -35,10 +38,11 @@ export interface AuditRecord {
 }
 
 /**
- * Append-only JSONL audit log. Synchronous appends keep records ordered and
- * on disk before the tool returns. Every line goes through the redactor.
+ * Append-only JSONL audit log for single-process (stdio) use. Appends are
+ * synchronous so records are ordered and on disk before the tool returns.
+ * Every line goes through the redactor.
  */
-export class AuditLog {
+export class AuditLog implements AuditStore {
   constructor(
     private readonly path: string,
     private readonly redact: Redactor,
@@ -51,7 +55,7 @@ export class AuditLog {
     return this.path;
   }
 
-  append(record: Omit<AuditRecord, 'ts'>): AuditRecord {
+  async append(record: Omit<AuditRecord, 'ts'>): Promise<AuditRecord> {
     const full: AuditRecord = { ts: this.now().toISOString(), ...record };
     appendFileSync(this.path, `${this.redact(JSON.stringify(full))}\n`, { mode: 0o600 });
     return full;
@@ -72,15 +76,35 @@ export class AuditLog {
       });
   }
 
-  /** Most recent experiment evaluation recorded for an ad unit. */
-  latestEvaluation(adUnitId: string): AuditRecord | undefined {
+  async latestEvaluation(adUnitId: string): Promise<AuditRecord | undefined> {
     return this.readAll()
       .filter((r) => r.event === 'experiment_evaluated' && r.ad_unit_id === adUnitId)
       .at(-1);
   }
 
-  /** The successful apply that created `changeId`, if any. */
-  findApplied(changeId: string): AuditRecord | undefined {
+  async findApplied(changeId: string): Promise<AuditRecord | undefined> {
     return this.readAll().find((r) => r.event === 'apply_succeeded' && r.plan_id === changeId);
+  }
+
+  async listApplied(filter: {
+    adUnitId?: string | undefined;
+    limit: number;
+  }): Promise<AuditRecord[]> {
+    return this.readAll()
+      .filter((r) => r.event === 'apply_succeeded')
+      .filter((r) => !filter.adUnitId || r.ad_unit_id === filter.adUnitId)
+      .reverse()
+      .slice(0, filter.limit);
+  }
+
+  async rolledBackBy(changeIds: string[]): Promise<Map<string, string>> {
+    const wanted = new Set(changeIds);
+    const out = new Map<string, string>();
+    for (const r of this.readAll()) {
+      if (r.event === 'apply_succeeded' && r.rollback_of && wanted.has(r.rollback_of)) {
+        out.set(r.rollback_of, r.plan_id);
+      }
+    }
+    return out;
   }
 }
