@@ -40,3 +40,4 @@ coverage/
 
 # Live validation output (structure only, but keep it out of git)
 live-check-report.json
+evals-report.json
