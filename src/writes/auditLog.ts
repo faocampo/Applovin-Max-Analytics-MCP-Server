@@ -10,6 +10,19 @@ export type AuditEvent =
   | 'apply_failed'
   | 'experiment_evaluated';
 
+/** What an experiment evaluation records; lift fields measure the impact of promotions. */
+export interface EvaluationRecord {
+  verdict: string;
+  recommendation: string;
+  start: string;
+  end: string;
+  relative_lift?: number | null;
+  relative_ci95?: [number, number] | null;
+  control_rpm?: number | null;
+  test_rpm?: number | null;
+  matched_days?: number;
+}
+
 export interface AuditRecord {
   ts: string;
   event: AuditEvent;
@@ -34,7 +47,7 @@ export interface AuditRecord {
   outcome_unknown?: boolean;
   verification?: unknown;
   /** experiment_evaluated only: verdict and recommendation. */
-  evaluation?: { verdict: string; recommendation: string; start: string; end: string } | undefined;
+  evaluation?: EvaluationRecord | undefined;
 }
 
 /**

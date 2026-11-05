@@ -1,0 +1,44 @@
+name: Agent evals
+
+# Runs real model calls, so it costs money: manual trigger only.
+on:
+  workflow_dispatch:
+    inputs:
+      model:
+        description: Claude model
+        default: claude-opus-5-5
+      effort:
+        description: Effort (low, medium, high, xhigh, max)
+        default: medium
+      scenario:
+        description: Single scenario id (empty = all)
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  evals:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Run evals
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: >
+          node scripts/run-evals.mjs
+          --model "${{ inputs.model }}"
+          --effort "${{ inputs.effort }}"
+          ${{ inputs.scenario && format('--scenario {0}', inputs.scenario) || '' }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: evals-report
+          path: evals-report.json

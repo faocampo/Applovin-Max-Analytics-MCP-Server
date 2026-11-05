@@ -184,7 +184,13 @@ If you want ARPDAU / IMPDAU (for example from Loomit or an MMP), M4 needs a DAU 
 
 ## M6 · Evals and adoption
 
+**Prerequisites**
+- An Anthropic API key in the repository's Actions secrets (`ANTHROPIC_API_KEY`) for the **Agent evals** workflow, or an `ant auth login` profile locally.
+
 | ID | Test | How | Expected | Status |
 |---|---|---|---|---|
-| V6.1 | Eval scenarios from real cases | Provide 5–10 real monetization questions or incidents with their known answers. | Turned into anonymised eval scenarios | ☐ |
-| V6.2 | Design-partner pilot | One or two partners use the server for 2–4 weeks. | Adoption and impact metrics collected; feedback logged | ☐ |
+| V6.1 | Baseline eval run | Run the **Agent evals** workflow, or `npm run evals`. | All 5 scenarios pass. Note tokens and cost in `evals-report.json`; each failing check names the behaviour to fix. | ☐ |
+| V6.2 | Real scenarios | Provide 5–10 real monetization questions or incidents with known answers. | Added as anonymised scenarios in `evals/scenarios/`; the suite still passes | ☐ |
+| V6.3 | Effort sweep | Run with `--effort low`, `medium` and `high`. | Pick the lowest effort that keeps every scenario passing (cost per completed task, not per call) | ☐ |
+| V6.4 | Adoption dashboard | Build the PromQL panels and run the SQL in `docs/adoption.md` against staging. | Funnel and impact numbers available per tenant | ☐ |
+| V6.5 | Design-partner pilot | Follow `docs/design-partners.md` with 1–2 partners. | Phase 3 review completed; decision per partner | ☐ |

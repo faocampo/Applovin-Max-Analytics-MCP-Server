@@ -180,6 +180,11 @@ export function registerExperimentTools(server: McpServer, deps: ToolDeps): void
           { name: picked.test, days: arms.get(picked.test) ?? [] },
           deps.experiments,
         );
+        deps.metrics?.experimentEvaluated(
+          deps.tenant ?? 'default',
+          evaluation.verdict,
+          evaluation.recommendation,
+        );
         await deps.changes?.recordEvaluation(
           args.ad_unit_id,
           {
@@ -187,6 +192,11 @@ export function registerExperimentTools(server: McpServer, deps: ToolDeps): void
             recommendation: evaluation.recommendation,
             start: args.start,
             end: args.end,
+            relative_lift: evaluation.difference.relative_lift,
+            relative_ci95: evaluation.difference.relative_ci95,
+            control_rpm: evaluation.control.rpm,
+            test_rpm: evaluation.test.rpm,
+            matched_days: evaluation.matched_days,
           },
           callContext(server, ctx),
         );

@@ -1,7 +1,7 @@
 # -- Container image. Pin a digest in production.
 image:
   repository: ghcr.io/faocampo/applovin-max-mcp
-  tag: "0.6.0"
+  tag: "0.7.0"
   pullPolicy: IfNotPresent
 
 replicaCount: 2

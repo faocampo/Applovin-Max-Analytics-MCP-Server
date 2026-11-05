@@ -2,7 +2,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { ApplovinError, validationError } from '../applovin/errors.js';
 import { EXPERIMENT_FIELDS, type ManagementApi, summarizeAdUnit } from '../applovin/management.js';
 import type { WriteConfig } from '../config.js';
-import type { AuditRecord } from './auditLog.js';
+import type { AuditRecord, EvaluationRecord } from './auditLog.js';
 import { canonicalJson, type DiffEntry, diffJson, stateHash } from './diff.js';
 import {
   evaluatePolicies,
@@ -382,7 +382,7 @@ export class ChangeService {
   /** Records an evaluate_experiment result so promotions can be gated on it. */
   async recordEvaluation(
     adUnitId: string,
-    evaluation: { verdict: string; recommendation: string; start: string; end: string },
+    evaluation: EvaluationRecord,
     ctx: CallContext = {},
   ): Promise<void> {
     await this.options.audit.append({

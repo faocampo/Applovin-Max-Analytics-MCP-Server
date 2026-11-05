@@ -13,7 +13,7 @@ Estimates assume one engineer. They are sizing, not commitments.
 | **M3 · Safe writes** ✅ code complete (test devices pending schema) | Plan/apply/rollback: `plan_change` returns a diff, a policy evaluation and a token bound to a snapshot hash; `apply_change` re-reads and aborts on drift. Policy engine, append-only audit log, snapshots. Low-risk writes first (test devices, floors, frequency caps), behind a flag | 3–4 wks | Dedicated test app / ad units in a real account |
 | **M4 · Experiment-driven operations** ✅ code complete | Create, monitor and promote/deprecate MAX experiments, with statistical evaluation (sample size, outliers, revenue concentration) and guardrails on requests, fill and UX. Playbooks as MCP prompts | ~3 wks | Staging with limited live traffic |
 | **M5 · Remote, multi-tenant production** ✅ code complete | Streamable HTTP, OAuth per the MCP spec, per-tenant credentials in a secrets manager, read/propose/apply scopes, audit store in Postgres, Prometheus/OpenTelemetry, Kubernetes deploy, per-tenant quotas within AppLovin's limits | 3–4 wks | Staging → production, with a security review |
-| **M6 · Evals and adoption** | Scenario eval suite with recorded fixtures; design partners. Metrics: active tenants, % of plans applied, rollbacks, net revenue impact measured through experiments | Ongoing | Production |
+| **M6 · Evals and adoption** ✅ code complete | Scenario eval suite with recorded fixtures; design partners. Metrics: active tenants, % of plans applied, rollbacks, net revenue impact measured through experiments | Ongoing | Production |
 
 ## Target architecture
 

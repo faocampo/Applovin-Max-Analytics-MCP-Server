@@ -13,6 +13,7 @@ export interface Metrics {
   cacheLookup(hit: boolean): void;
   httpRequest(route: string, status: number): void;
   inFlight(tenant: string, delta: number): void;
+  experimentEvaluated(tenant: string, verdict: string, recommendation: string): void;
 }
 
 export const noopMetrics: Metrics = {
@@ -23,6 +24,7 @@ export const noopMetrics: Metrics = {
   cacheLookup: () => {},
   httpRequest: () => {},
   inFlight: () => {},
+  experimentEvaluated: () => {},
 };
 
 export function createMetrics(options: { defaultMetrics?: boolean } = {}): {
@@ -89,6 +91,13 @@ export function createMetrics(options: { defaultMetrics?: boolean } = {}): {
     registers: [registry],
   });
 
+  const evaluations = new Counter({
+    name: 'mcp_experiment_evaluations_total',
+    help: 'Experiment evaluations by verdict and recommendation.',
+    labelNames: ['tenant', 'verdict', 'recommendation'] as const,
+    registers: [registry],
+  });
+
   return {
     registry,
     metrics: {
@@ -105,6 +114,8 @@ export function createMetrics(options: { defaultMetrics?: boolean } = {}): {
       cacheLookup: (hit) => cache.inc({ result: hit ? 'hit' : 'miss' }),
       httpRequest: (route, status) => http.inc({ route, status: String(status) }),
       inFlight: (tenant, delta) => inflight.inc({ tenant }, delta),
+      experimentEvaluated: (tenant, verdict, recommendation) =>
+        evaluations.inc({ tenant, verdict, recommendation }),
     },
   };
 }

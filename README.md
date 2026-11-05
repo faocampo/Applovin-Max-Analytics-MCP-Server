@@ -4,12 +4,13 @@ A [Model Context Protocol](https://modelcontextprotocol.io) server that gives AI
 (Claude and any other MCP client) read access to AppLovin MAX mediation analytics:
 aggregated revenue reporting and install-cohort reports.
 
-> **Status: Milestones 1–5 of the [roadmap](docs/roadmap.md).**
+> **Status: all six milestones of the [roadmap](docs/roadmap.md) are code complete.** Live validation is in progress: [docs/validation-plan.md](docs/validation-plan.md).
 > - M1 hardened the read-only reporting foundation.
 > - M2 added read-only visibility into ad unit configuration (waterfalls, floors, segments, experiments) and an audit that joins configuration with performance.
 > - M3 added guarded writes: plan → human confirmation → apply → rollback.
 > - M4 added A/B experiments (create, evaluate, promote, deprecate) and playbook prompts.
 > - M5 added a remote multi-tenant service: Streamable HTTP, OAuth scopes, per-tenant credentials, Postgres, Prometheus, Helm. See [docs/operations.md](docs/operations.md).
+> - M6 added an agent eval suite and adoption/impact metrics. See [docs/adoption.md](docs/adoption.md) and [docs/design-partners.md](docs/design-partners.md).
 >
 > **Writes are off by default.** They need `APPLOVIN_ENABLE_WRITES=true` and an explicit allowlist of ad units. The write path has not yet been validated against a live account: use a dedicated test app first.
 >
@@ -161,6 +162,21 @@ All plans are applied with `apply_change`, so they get the same confirmation, dr
 
 Setup, IdP claims, secrets, scaling and the runbook are in [docs/operations.md](docs/operations.md). The threat model is in [docs/security/threat-model.md](docs/security/threat-model.md).
 
+## Agent evals (M6)
+
+`npm run evals` runs every scenario in `evals/scenarios/` against a real Claude model (default `claude-opus-5-5`, effort `medium`). The MCP server runs in-process and AppLovin is replaced by each scenario's fixtures, so no AppLovin account is touched. Each run is scored on:
+- tool choice;
+- argument validity;
+- safety: no `apply_change`, guardrails respected, injected instructions in data ignored;
+- efficiency;
+- the final answer.
+
+It writes `evals-report.json` with checks, tool calls and token usage.
+
+Credentials: `ANTHROPIC_API_KEY` or an `ant auth login` profile. In CI, run the **Agent evals** workflow by hand: it costs money, so it never runs on push. The harness itself is tested offline with a scripted model (`test/evals.test.ts`).
+
+Current scenarios: top countries by revenue, an audit that finds a silent network, an oversized floor change refused by guardrails, an experiment review that prepares (but does not apply) a promotion, and prompt injection in report data. Add real cases from design partners (V6.1).
+
 ## Setup
 
 Requirements: Node.js 20+ and an AppLovin MAX **Report Key** (MAX dashboard → Account → Keys).
@@ -268,6 +284,7 @@ src/
   tenancy/              M5 per-tenant credentials (file with hot reload)
   store/                M5 Postgres audit and plan stores, migrations
   observability/        M5 Prometheus metrics, OpenTelemetry spans
+  evals/                M6 agent eval harness (model injected; scenarios in evals/scenarios)
   writes/               M3/M4 write path, no MCP types
     changeService.ts    plan / apply / rollback orchestration
     policy.ts           guardrails

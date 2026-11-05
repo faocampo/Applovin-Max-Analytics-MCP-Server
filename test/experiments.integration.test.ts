@@ -206,7 +206,12 @@ describe('experiment lifecycle', () => {
     });
     expect(audit().at(-1)).toMatchObject({
       event: 'experiment_evaluated',
-      evaluation: { verdict: 'better', recommendation: 'promote' },
+      evaluation: {
+        verdict: 'better',
+        recommendation: 'promote',
+        relative_lift: expect.any(Number),
+        matched_days: 10,
+      },
     });
 
     const promote = parse(
