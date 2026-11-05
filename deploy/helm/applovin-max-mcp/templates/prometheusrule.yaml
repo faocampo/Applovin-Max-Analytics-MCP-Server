@@ -1,0 +1,52 @@
+{{- if .Values.prometheusRule.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "amm.fullname" . }}
+  labels: {{- include "amm.labels" . | nindent 4 }}
+spec:
+  groups:
+    - name: applovin-max-mcp
+      rules:
+        - alert: MCPToolErrorRateHigh
+          expr: |
+            sum(rate(mcp_tool_calls_total{outcome=~"crash|http|network|timeout"}[10m]))
+              / clamp_min(sum(rate(mcp_tool_calls_total[10m])), 1e-9) > 0.10
+          for: 10m
+          labels: { severity: warning }
+          annotations:
+            summary: More than 10% of tool calls fail for server-side reasons.
+            runbook: docs/operations.md#tool-error-rate
+        - alert: AppLovinKeyRejected
+          expr: sum by (tenant) (increase(mcp_tool_calls_total{outcome="auth"}[15m])) > 0
+          labels: { severity: critical }
+          annotations:
+            summary: "AppLovin rejected a key for tenant {{`{{ $labels.tenant }}`}}: rotated or revoked."
+            runbook: docs/operations.md#key-rejected
+        - alert: AppLovinRateLimited
+          expr: sum(increase(mcp_applovin_requests_total{status="429"}[15m])) > 0
+          labels: { severity: warning }
+          annotations:
+            summary: AppLovin is rate limiting; check per-tenant quotas.
+            runbook: docs/operations.md#rate-limited
+        - alert: WriteOutcomeUnknown
+          expr: sum by (tenant) (increase(mcp_write_events_total{event="apply_failed"}[30m])) > 0
+          labels: { severity: critical }
+          annotations:
+            summary: "A write for tenant {{`{{ $labels.tenant }}`}} failed; its outcome may be unknown."
+            runbook: docs/operations.md#write-failed
+        - alert: MCPToolLatencyHigh
+          expr: histogram_quantile(0.95, sum by (le, tool) (rate(mcp_tool_duration_seconds_bucket[10m]))) > 30
+          for: 15m
+          labels: { severity: warning }
+          annotations:
+            summary: "p95 latency of {{`{{ $labels.tool }}`}} above 30s."
+            runbook: docs/operations.md#latency
+        - alert: TenantSaturated
+          expr: max by (tenant) (mcp_tenant_requests_in_flight) >= {{ .Values.config.tenantMaxConcurrency }}
+          for: 10m
+          labels: { severity: info }
+          annotations:
+            summary: "Tenant {{`{{ $labels.tenant }}`}} is at its concurrency limit."
+            runbook: docs/operations.md#saturation
+{{- end }}

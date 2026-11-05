@@ -50,3 +50,27 @@ jobs:
         run: npm run smoke
       - name: Audit production dependencies
         run: npm audit --omit=dev --audit-level=high
+
+  container:
+    name: Container image and Helm chart
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image (not pushed)
+        run: docker build -t applovin-max-mcp:ci .
+      - name: Image starts and fails fast without configuration
+        run: |
+          set +e
+          docker run --rm -e MCP_TRANSPORT=http applovin-max-mcp:ci 2> err.txt
+          code=$?
+          cat err.txt
+          test "$code" -eq 1 && grep -q MCP_PUBLIC_URL err.txt
+      - uses: azure/setup-helm@v4
+      - name: Lint and render the chart
+        run: |
+          helm lint deploy/helm/applovin-max-mcp
+          helm template t deploy/helm/applovin-max-mcp > /dev/null
+          helm template t deploy/helm/applovin-max-mcp --set config.enableWrites=true --set database.existingSecret=db > /dev/null
+          ! helm template t deploy/helm/applovin-max-mcp --set config.enableWrites=true > /dev/null 2>&1
+

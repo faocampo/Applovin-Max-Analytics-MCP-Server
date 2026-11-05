@@ -154,20 +154,31 @@ If you want ARPDAU / IMPDAU (for example from Loomit or an MMP), M4 needs a DAU 
 
 ## M5 · Remote, multi-tenant production
 
-**Decisions needed** (can be made now)
-- D5.1: Hosting target and environment (e.g. existing Kubernetes cluster, namespace).
-- D5.2: Identity provider for OAuth.
-- D5.3: Secrets manager for per-tenant AppLovin keys.
-- D5.4: Pilot tenants: which accounts, which apps.
+**M5 decisions: defaults applied, awaiting confirmation**
+
+| ID | Decision | Default in code | Where |
+|---|---|---|---|
+| D5.1 | Hosting | Kubernetes via the Helm chart (`deploy/helm`), GitOps example for ArgoCD; distroless image | `docs/operations.md` |
+| D5.2 | Identity provider | Any OIDC/OAuth server issuing JWTs (JWKS). Tenant from the `tenant` claim; scopes `applovin:read|propose|apply` | `MCP_AUTH_*`, `MCP_TENANT_CLAIM` |
+| D5.3 | Secrets | A Kubernetes Secret with `credentials.json`, synced from AWS Secrets Manager (External Secrets Operator or CSI); hot reload | `credentials.existingSecret` |
+| D5.4 | Pilot tenants | None configured | credentials file |
+| D5.5 | Per-tenant limits | 4 concurrent requests per pod; AppLovin rate limits per pod | `MCP_TENANT_MAX_CONCURRENCY`, `APPLOVIN_*_RPM/RPH` |
+
+**Prerequisites**
+- A staging namespace, an IdP client issuing tokens with the claims above, a Postgres database, and the AppLovin keys of one or two pilot tenants in Secrets Manager.
+- The image built by CI and pushed to your registry. CI builds the image but does not push it.
 
 | ID | Test | How | Expected | Status |
 |---|---|---|---|---|
-| V5.1 | Scopes | Use a read-only token and attempt `plan_change`; use a propose token and attempt `apply_change`. | Both refused | ☐ |
-| V5.2 | Tenant isolation | With two tenants, try to read the other tenant's ad unit by id. | Refused; no data leaks | ☐ |
-| V5.3 | Key rotation | Rotate a tenant key in the secrets manager. | Picked up without a restart | ☐ |
-| V5.4 | Load and quota | Simulate concurrent agents on one tenant. | Per-tenant quota holds; AppLovin is never rate limited | ☐ |
-| V5.5 | Observability | Trigger errors and slow calls. | Visible in metrics and traces; alerts fire | ☐ |
-| V5.6 | Security review | External or internal review. | Findings resolved or explicitly accepted | ☐ |
+| V5.1 | Deploy | `helm upgrade --install` with staging values. | Pods ready, `/readyz` 200, migrations applied once (check `schema_migrations`) | ☐ |
+| V5.2 | OAuth discovery | Connect Claude (remote MCP) to the public URL. | Client discovers the authorization server through `/.well-known/oauth-protected-resource/mcp`, logs in, lists tools | ☐ |
+| V5.3 | Scopes | Use tokens with read, read+propose and read+propose+apply. | Tool lists differ as documented; `apply_change` only with the apply scope | ☐ |
+| V5.4 | Tenant isolation | With two tenants, try to read and plan on the other tenant's ad unit ids. | AppLovin rejects the other account's ids (each tenant uses its own keys); no data crosses tenants | ☐ |
+| V5.5 | Key rotation | Rotate a tenant key in Secrets Manager. | New key in use within seconds, no restart; old key no longer sent | ☐ |
+| V5.6 | Multi-replica apply | With 2+ replicas, plan and apply the same change many times. | Every apply succeeds or is refused cleanly; no double writes; audit complete | ☐ |
+| V5.7 | Load and quota | Run concurrent agents on one tenant. | `429`s from the server at the limit, none from AppLovin | ☐ |
+| V5.8 | Observability | Trigger errors (bad key, slow query). | Metrics move; alerts from the PrometheusRule fire; logs contain no keys | ☐ |
+| V5.9 | Security review | Independent review against `docs/security/threat-model.md`. | Findings resolved or explicitly accepted | ☐ |
 
 ---
 

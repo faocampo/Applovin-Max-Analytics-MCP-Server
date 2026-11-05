@@ -1,0 +1,72 @@
+# -- Container image. Pin a digest in production.
+image:
+  repository: ghcr.io/faocampo/applovin-max-mcp
+  tag: "0.6.0"
+  pullPolicy: IfNotPresent
+
+replicaCount: 2
+
+# -- Non-secret configuration, passed as environment variables.
+config:
+  publicUrl: https://mcp.example.com/mcp          # MCP_PUBLIC_URL (required)
+  auth:
+    issuer: https://auth.example.com              # MCP_AUTH_ISSUER (required)
+    audience: ""                                  # defaults to publicUrl
+    jwksUrl: ""                                   # defaults to <issuer>/.well-known/jwks.json
+    tenantClaim: tenant
+  tenantMaxConcurrency: 4
+  logLevel: info
+  enableWrites: false                             # requires the database secret
+  writeConfirmation: elicit
+  extraEnv: {}                                    # any other APPLOVIN_* / MCP_* settings
+
+# -- Per-tenant AppLovin keys: an existing Secret with a `credentials.json` key,
+# e.g. synced from AWS Secrets Manager by External Secrets Operator.
+credentials:
+  existingSecret: applovin-max-mcp-credentials
+  key: credentials.json
+  reloadMs: 5000
+
+# -- Postgres URL from an existing Secret. Required when writes are enabled.
+database:
+  existingSecret: ""
+  key: DATABASE_URL
+
+service:
+  type: ClusterIP
+  port: 80
+
+resources:
+  requests: { cpu: 100m, memory: 192Mi }
+  limits: { memory: 512Mi }
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 6
+  targetCPUUtilizationPercentage: 70
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+serviceMonitor:
+  enabled: true
+  interval: 30s
+
+prometheusRule:
+  enabled: true
+
+# -- Istio egress: allow only AppLovin and the identity provider.
+istio:
+  serviceEntries:
+    enabled: false
+    hosts: [r.applovin.com, o.applovin.com]
+
+serviceAccount:
+  create: true
+  name: ""
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

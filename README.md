@@ -4,11 +4,12 @@ A [Model Context Protocol](https://modelcontextprotocol.io) server that gives AI
 (Claude and any other MCP client) read access to AppLovin MAX mediation analytics:
 aggregated revenue reporting and install-cohort reports.
 
-> **Status: Milestones 1–4 of the [roadmap](docs/roadmap.md).**
+> **Status: Milestones 1–5 of the [roadmap](docs/roadmap.md).**
 > - M1 hardened the read-only reporting foundation.
 > - M2 added read-only visibility into ad unit configuration (waterfalls, floors, segments, experiments) and an audit that joins configuration with performance.
 > - M3 added guarded writes: plan → human confirmation → apply → rollback.
 > - M4 added A/B experiments (create, evaluate, promote, deprecate) and playbook prompts.
+> - M5 added a remote multi-tenant service: Streamable HTTP, OAuth scopes, per-tenant credentials, Postgres, Prometheus, Helm. See [docs/operations.md](docs/operations.md).
 >
 > **Writes are off by default.** They need `APPLOVIN_ENABLE_WRITES=true` and an explicit allowlist of ad units. The write path has not yet been validated against a live account: use a dedicated test app first.
 >
@@ -145,6 +146,21 @@ All plans are applied with `apply_change`, so they get the same confirmation, dr
 
 **Playbook prompts** (MCP prompts, available with a Management Key): `floor_tuning`, `waterfall_audit`, `network_onboarding`, `experiment_review`. Each one guides the agent through the existing tools and stops at a plan. None of them applies anything.
 
+## Remote multi-tenant service (M5)
+
+`MCP_TRANSPORT=http` serves the same tools over Streamable HTTP for many tenants:
+
+- **OAuth.** JWT access tokens from your identity provider: issuer, audience and expiry are checked against its JWKS. The tenant comes from a claim.
+- **Scopes:**
+  - `applovin:read` for reads;
+  - `applovin:propose` for plans;
+  - `applovin:apply` for applying. Applying still needs human confirmation in the client.
+- **Per-tenant isolation:** own AppLovin keys (from a credentials file, reloaded on rotation), write allowlist, rate limiters, cache and concurrency limit.
+- **Postgres** for the audit log and plans, so any replica can apply a plan made on another. Required when writes are on.
+- **Operations:** `/healthz`, `/readyz`, Prometheus `/metrics`, OpenTelemetry spans, a distroless image and a Helm chart with HPA, PDB, ServiceMonitor and alert rules.
+
+Setup, IdP claims, secrets, scaling and the runbook are in [docs/operations.md](docs/operations.md). The threat model is in [docs/security/threat-model.md](docs/security/threat-model.md).
+
 ## Setup
 
 Requirements: Node.js 20+ and an AppLovin MAX **Report Key** (MAX dashboard → Account → Keys).
@@ -201,6 +217,15 @@ npm run build
 | `APPLOVIN_EXP_MAX_DAYS` | `28` | No difference after this many days → recommend deprecation |
 | `APPLOVIN_EXP_PROMOTION_REQUIRES_EVALUATION` | `true` | Promotion needs a recent `promote` recommendation |
 | `APPLOVIN_EXP_EVALUATION_MAX_AGE_HOURS` | `48` | How recent that evaluation must be |
+| `MCP_TRANSPORT` | `stdio` | `http` for the remote service |
+| `MCP_PUBLIC_URL` | — | Public URL of the MCP endpoint (http mode, https required) |
+| `MCP_AUTH_ISSUER` / `MCP_AUTH_AUDIENCE` / `MCP_AUTH_JWKS_URL` | — / public URL / `<issuer>/.well-known/jwks.json` | OAuth token validation |
+| `MCP_TENANT_CLAIM` | `tenant` | JWT claim holding the tenant id |
+| `MCP_TENANT_CREDENTIALS_FILE` | — | Per-tenant keys and allowlists (JSON); without it, one tenant from the environment |
+| `DATABASE_URL` | — | Postgres; required for writes over HTTP |
+| `MCP_TENANT_MAX_CONCURRENCY` | `4` | In-flight requests per tenant per pod |
+| `MCP_HTTP_HOST` / `MCP_HTTP_PORT` | `0.0.0.0` / `8080` | Listen address |
+| `MCP_AUTH_MODE` | `jwt` | `none` only for local development on loopback |
 
 The server fails fast at startup if the configuration is invalid.
 
@@ -239,6 +264,10 @@ src/
   experiments/          M4 experiment statistics (pure)
     evaluate.ts         paired RPM test, guardrails, robust outliers, arm identification
   prompts/              M4 playbook prompts
+  http/                 M5 remote service: app (routing, auth, tenants), JWT verifier, node adapter
+  tenancy/              M5 per-tenant credentials (file with hot reload)
+  store/                M5 Postgres audit and plan stores, migrations
+  observability/        M5 Prometheus metrics, OpenTelemetry spans
   writes/               M3/M4 write path, no MCP types
     changeService.ts    plan / apply / rollback orchestration
     policy.ts           guardrails
