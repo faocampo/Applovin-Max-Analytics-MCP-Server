@@ -1,6 +1,7 @@
 # Backlog: M1–M6 issue breakdown
 
-35 issues across the six milestones in [roadmap.md](roadmap.md). No dates: sequencing is by
+35 issues across the six milestones in [roadmap.md](roadmap.md), tracked on GitHub as #3–#37
+(item N below is issue #N+2). No dates: sequencing is by
 milestone, and the size column is a rough estimate.
 
 **Labels**
@@ -12,7 +13,7 @@ milestone, and the size column is a rough estimate.
 
 ## M1 · Hardened read foundation
 
-### 1. Rewrite the server in TypeScript on the official MCP SDK v2
+### 1. (#3) Rewrite the server in TypeScript on the official MCP SDK v2
 `type:infra` `area:platform` · S · delivered in PR #1
 
 Acceptance criteria
@@ -20,14 +21,14 @@ Acceptance criteria
 - Layers are separated: AppLovin client, domain, MCP tools.
 - `npm run check` passes from a clean `npm ci`.
 
-### 2. Remove the API key leak and redact secrets everywhere
+### 2. (#4) Remove the API key leak and redact secrets everywhere
 `type:security` `area:platform` · S · delivered in PR #1
 
 Acceptance criteria
 - No tool result, error message or log line contains the Report Key, including when the network fails (undici errors that embed the URL).
 - Unit tests and the stdio smoke test assert this with real `fetch`.
 
-### 3. HTTP client with timeouts, cancellation, retries and rate limiting
+### 3. (#5) HTTP client with timeouts, cancellation, retries and rate limiting
 `type:hardening` `area:platform` · S · delivered in PR #1
 
 Acceptance criteria
@@ -36,7 +37,7 @@ Acceptance criteria
 - Other 4xx responses are never retried.
 - A client-side token bucket caps calls per minute.
 
-### 4. Input validation and correct cohort column expansion
+### 4. (#6) Input validation and correct cohort column expansion
 `type:hardening` `area:reporting` · S · delivered in PR #1
 
 Acceptance criteria
@@ -45,7 +46,7 @@ Acceptance criteria
 - Metrics expand only to supported day suffixes. Mixing metrics from different cohort types returns an error that names the right type.
 - `revenue_report` works when `columns` is omitted.
 
-### 5. Response shaping, tests, CI and stdio smoke test
+### 5. (#7) Response shaping, tests, CI and stdio smoke test
 `type:test` `area:platform` · S · delivered in PR #1
 
 Acceptance criteria
@@ -53,7 +54,7 @@ Acceptance criteria
 - Coverage is at least 85% lines and 80% branches, gated in CI.
 - CI on Node 22 and 24 runs lint, typecheck, tests, build, the smoke test and `npm audit`.
 
-### 6. Validate reporting assumptions against a live account
+### 6. (#8) Validate reporting assumptions against a live account
 `type:test` `area:reporting` `needs-live-validation` · S
 
 Acceptance criteria
@@ -66,7 +67,7 @@ Acceptance criteria
 
 ## M2 · Configuration visibility (read-only)
 
-### 7. Management API client with hourly rate limit and read cache
+### 7. (#9) Management API client with hourly rate limit and read cache
 `type:feature` `area:management` · M
 
 Acceptance criteria
@@ -76,7 +77,7 @@ Acceptance criteria
 - Management tools are only registered when the key is configured.
 - Path parameters are validated, so no path injection is possible.
 
-### 8. Tool `list_ad_units`
+### 8. (#10) Tool `list_ad_units`
 `type:feature` `area:management` · S
 
 Acceptance criteria
@@ -84,7 +85,7 @@ Acceptance criteria
 - Filters by platform, ad format, package name and name substring.
 - Output is capped like the reporting tools.
 
-### 9. Tool `get_ad_unit` (including segment waterfalls)
+### 9. (#11) Tool `get_ad_unit` (including segment waterfalls)
 `type:feature` `area:management` · S
 
 Acceptance criteria
@@ -92,20 +93,20 @@ Acceptance criteria
 - `segment_id` returns that segment's waterfall.
 - Unknown response fields pass through unchanged, so the tool is schema-tolerant until #13 confirms the schemas.
 
-### 10. Tool `get_ad_unit_experiment`
+### 10. (#12) Tool `get_ad_unit_experiment`
 `type:feature` `area:management` · S
 
 Acceptance criteria
 - Reads an ad unit's experiment, optionally for one segment.
 - A clear, non-error result when the ad unit has no experiment.
 
-### 11. Tool `list_test_devices`
+### 11. (#13) Tool `list_test_devices`
 `type:feature` `area:management` · XS
 
 Acceptance criteria
 - Lists the account's test devices, capped.
 
-### 12. Tool `audit_ad_unit`: configuration × performance
+### 12. (#14) Tool `audit_ad_unit`: configuration × performance
 `type:feature` `area:management` · M
 
 Acceptance criteria
@@ -113,7 +114,7 @@ Acceptance criteria
 - Emits typed signals: no traffic, active network without impressions, network with traffic not in the active configuration, revenue concentration, active experiment, disabled ad unit.
 - Network-name matching between configuration and reporting is heuristic and stated as such, and unmatched names are listed.
 
-### 13. `live-check` script and Management API schema validation
+### 13. (#15) `live-check` script and Management API schema validation
 `type:test` `area:management` `needs-live-validation` · S
 
 Acceptance criteria
@@ -126,7 +127,7 @@ Acceptance criteria
 
 ## M3 · Safe writes
 
-### 14. Change model and `plan_change` tool
+### 14. (#16) Change model and `plan_change` tool
 `type:feature` `area:writes` · M
 
 Acceptance criteria
@@ -134,7 +135,7 @@ Acceptance criteria
 - `plan_change` reads current state and returns: a human-readable diff, the policy evaluation, a snapshot hash and a short-lived plan token.
 - Nothing is written to AppLovin.
 
-### 15. Policy engine with configurable guardrails
+### 15. (#17) Policy engine with configurable guardrails
 `type:feature` `area:writes` · M
 
 Acceptance criteria
@@ -147,7 +148,7 @@ Acceptance criteria
   - no disabling the last bidding network.
 - Every plan lists which policies passed or failed, with reasons.
 
-### 16. `apply_change` with drift detection and human confirmation
+### 16. (#18) `apply_change` with drift detection and human confirmation
 `type:feature` `area:writes` `type:security` · M
 
 Acceptance criteria
@@ -156,7 +157,7 @@ Acceptance criteria
 - Asks for human confirmation through MCP elicitation when the client supports it, and is refused otherwise unless explicitly configured.
 - Sends only the planned fields.
 
-### 17. Append-only audit log
+### 17. (#19) Append-only audit log
 `type:feature` `area:writes` · S
 
 Acceptance criteria
@@ -164,14 +165,14 @@ Acceptance criteria
 - Local JSONL in this milestone; Postgres in M5 (#31).
 - No credentials in records.
 
-### 18. Snapshots and `rollback_change` tool
+### 18. (#20) Snapshots and `rollback_change` tool
 `type:feature` `area:writes` · M
 
 Acceptance criteria
 - Every apply stores the pre-change snapshot of the touched fields.
 - `rollback_change` restores it through the same plan/apply path, including policy and drift checks.
 
-### 19. Write feature flag and kill switch
+### 19. (#21) Write feature flag and kill switch
 `type:security` `area:writes` · XS
 
 Acceptance criteria
@@ -179,7 +180,7 @@ Acceptance criteria
 - Write tools carry `destructiveHint` annotations.
 - The kill switch is documented.
 
-### 20. First write operations: test devices, bid floors, frequency capping
+### 20. (#22) First write operations: test devices, bid floors, frequency capping
 `type:feature` `area:writes` · M
 
 Acceptance criteria
@@ -187,7 +188,7 @@ Acceptance criteria
 - Bid floor updates always send the full floor list, as AppLovin requires.
 - Tested with recorded fixtures.
 
-### 21. Live validation of writes on a dedicated test app
+### 21. (#23) Live validation of writes on a dedicated test app
 `type:test` `area:writes` `needs-live-validation` · M
 
 Acceptance criteria
@@ -200,7 +201,7 @@ Acceptance criteria
 
 ## M4 · Experiment-driven operations
 
-### 22. Experiment lifecycle tools: create, inspect, promote, deprecate
+### 22. (#24) Experiment lifecycle tools: create, inspect, promote, deprecate
 `type:feature` `area:experiments` · M
 
 Acceptance criteria
@@ -208,21 +209,21 @@ Acceptance criteria
 - An experiment can only be created when none is active.
 - Promote and deprecate show the expected impact before applying.
 
-### 23. Per-arm experiment metrics
+### 23. (#25) Per-arm experiment metrics
 `type:feature` `area:experiments` · M
 
 Acceptance criteria
 - Collects per-arm revenue, impressions, requests, fill rate, ARPDAU and IMPDAU from reporting.
 - Which reporting dimensions identify the arms is confirmed in #27 and documented.
 
-### 24. Statistical evaluation
+### 24. (#26) Statistical evaluation
 `type:feature` `area:experiments` · M
 
 Acceptance criteria
 - Reports sample size versus the minimum needed, a confidence interval for the difference, outliers and revenue concentration (top-N share).
 - The result is one of "not enough data", "no detectable difference", "better" or "worse", with reasons.
 
-### 25. Net-benefit decision guardrails
+### 25. (#27) Net-benefit decision guardrails
 `type:feature` `area:experiments` · S
 
 Acceptance criteria
@@ -230,14 +231,14 @@ Acceptance criteria
 - Thresholds are configurable.
 - The recommendation states which guardrails passed.
 
-### 26. Playbooks as MCP prompts
+### 26. (#28) Playbooks as MCP prompts
 `type:feature` `area:experiments` `type:docs` · S
 
 Acceptance criteria
 - Prompts for: floor tuning, waterfall/network audit, new network onboarding, experiment review.
 - Each playbook uses only existing tools and ends in a plan, never an apply.
 
-### 27. Live validation of an end-to-end experiment
+### 27. (#29) Live validation of an end-to-end experiment
 `type:test` `area:experiments` `needs-live-validation` · M
 
 Acceptance criteria
@@ -248,7 +249,7 @@ Acceptance criteria
 
 ## M5 · Remote, multi-tenant production
 
-### 28. Streamable HTTP transport and health endpoints
+### 28. (#30) Streamable HTTP transport and health endpoints
 `type:infra` `area:platform` · M
 
 Acceptance criteria
@@ -256,7 +257,7 @@ Acceptance criteria
 - Liveness and readiness endpoints exist.
 - Graceful shutdown drains in-flight requests.
 
-### 29. OAuth authorization with read/propose/apply scopes
+### 29. (#31) OAuth authorization with read/propose/apply scopes
 `type:security` `area:platform` · L
 
 Acceptance criteria
@@ -264,14 +265,14 @@ Acceptance criteria
 - Tools are gated by scope: read, propose (plan), apply.
 - Tokens are validated against the chosen identity provider.
 
-### 30. Per-tenant credentials in a secrets manager
+### 30. (#32) Per-tenant credentials in a secrets manager
 `type:security` `area:platform` · M
 
 Acceptance criteria
 - Report and Management Keys are stored per tenant in a secrets manager, never in config files or logs.
 - Keys can be rotated without a restart.
 
-### 31. Durable audit and plan store in Postgres
+### 31. (#33) Durable audit and plan store in Postgres
 `type:infra` `area:writes` · M
 
 Acceptance criteria
@@ -279,7 +280,7 @@ Acceptance criteria
 - Migrations are versioned.
 - Records are queryable per tenant and per ad unit.
 
-### 32. Observability: Prometheus metrics and OpenTelemetry traces
+### 32. (#34) Observability: Prometheus metrics and OpenTelemetry traces
 `type:infra` `area:platform` · M
 
 Acceptance criteria
@@ -287,7 +288,7 @@ Acceptance criteria
 - Traces span tool → AppLovin calls.
 - Alert rules are documented.
 
-### 33. Deploy pipeline, per-tenant quotas and security review
+### 33. (#35) Deploy pipeline, per-tenant quotas and security review
 `type:infra` `type:security` `area:platform` · L
 
 Acceptance criteria
@@ -299,7 +300,7 @@ Acceptance criteria
 
 ## M6 · Evals and adoption
 
-### 34. Agent eval suite with recorded fixtures
+### 34. (#36) Agent eval suite with recorded fixtures
 `type:test` `area:evals` · L
 
 Acceptance criteria
@@ -307,7 +308,7 @@ Acceptance criteria
 - Scores tool choice, argument validity and plan safety.
 - Runs in CI on demand.
 
-### 35. Adoption and impact metrics, design-partner onboarding
+### 35. (#37) Adoption and impact metrics, design-partner onboarding
 `type:docs` `area:evals` · M
 
 Acceptance criteria
