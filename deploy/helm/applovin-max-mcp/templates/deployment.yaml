@@ -1,0 +1,89 @@
+{{- if and .Values.config.enableWrites (not .Values.database.existingSecret) }}
+{{- fail "config.enableWrites requires database.existingSecret (plans and audit must be shared by every replica)" }}
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "amm.fullname" . }}
+  labels: {{- include "amm.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels: {{- include "amm.selector" . | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "amm.selector" . | nindent 8 }}
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+    spec:
+      serviceAccountName: {{ include "amm.serviceAccount" . }}
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: server
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - { name: http, containerPort: 8080 }
+          env:
+            - { name: MCP_TRANSPORT, value: http }
+            - { name: MCP_HTTP_HOST, value: "0.0.0.0" }
+            - { name: MCP_HTTP_PORT, value: "8080" }
+            - { name: MCP_PUBLIC_URL, value: {{ .Values.config.publicUrl | quote }} }
+            - { name: MCP_AUTH_MODE, value: jwt }
+            - { name: MCP_AUTH_ISSUER, value: {{ .Values.config.auth.issuer | quote }} }
+            {{- with .Values.config.auth.audience }}
+            - { name: MCP_AUTH_AUDIENCE, value: {{ . | quote }} }
+            {{- end }}
+            {{- with .Values.config.auth.jwksUrl }}
+            - { name: MCP_AUTH_JWKS_URL, value: {{ . | quote }} }
+            {{- end }}
+            - { name: MCP_TENANT_CLAIM, value: {{ .Values.config.auth.tenantClaim | quote }} }
+            - { name: MCP_TENANT_CREDENTIALS_FILE, value: /var/run/secrets/applovin/{{ .Values.credentials.key }} }
+            - { name: MCP_CREDENTIALS_RELOAD_MS, value: {{ .Values.credentials.reloadMs | quote }} }
+            - { name: MCP_TENANT_MAX_CONCURRENCY, value: {{ .Values.config.tenantMaxConcurrency | quote }} }
+            - { name: LOG_LEVEL, value: {{ .Values.config.logLevel | quote }} }
+            - { name: APPLOVIN_ENABLE_WRITES, value: {{ .Values.config.enableWrites | quote }} }
+            - { name: APPLOVIN_WRITE_CONFIRMATION, value: {{ .Values.config.writeConfirmation | quote }} }
+            {{- if .Values.database.existingSecret }}
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef: { name: {{ .Values.database.existingSecret }}, key: {{ .Values.database.key }} }
+            {{- end }}
+            {{- range $k, $v := .Values.config.extraEnv }}
+            - { name: {{ $k }}, value: {{ $v | quote }} }
+            {{- end }}
+          volumeMounts:
+            - { name: credentials, mountPath: /var/run/secrets/applovin, readOnly: true }
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 10
+          readinessProbe:
+            httpGet: { path: /readyz, port: http }
+            periodSeconds: 5
+            failureThreshold: 3
+          resources: {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+      volumes:
+        - name: credentials
+          secret:
+            secretName: {{ .Values.credentials.existingSecret }}
+            defaultMode: 0400
+      {{- with .Values.nodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity: {{- toYaml . | nindent 8 }}
+      {{- end }}

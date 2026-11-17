@@ -31,3 +31,13 @@ go.work.sum
 # .idea/
 # .vscode/
 bootstrap
+
+# Node / TypeScript
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+
+# Live validation output (structure only, but keep it out of git)
+live-check-report.json
+evals-report.json

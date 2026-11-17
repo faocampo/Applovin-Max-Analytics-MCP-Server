@@ -1,0 +1,64 @@
+{{- if .Values.serviceAccount.create }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "amm.serviceAccount" . }}
+  labels: {{- include "amm.labels" . | nindent 4 }}
+automountServiceAccountToken: false
+{{- end }}
+{{- if .Values.autoscaling.enabled }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "amm.fullname" . }}
+  labels: {{- include "amm.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: {{ include "amm.fullname" . }} }
+  minReplicas: {{ .Values.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.autoscaling.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target: { type: Utilization, averageUtilization: {{ .Values.autoscaling.targetCPUUtilizationPercentage }} }
+{{- end }}
+{{- if .Values.podDisruptionBudget.enabled }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "amm.fullname" . }}
+  labels: {{- include "amm.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels: {{- include "amm.selector" . | nindent 6 }}
+{{- end }}
+{{- if .Values.serviceMonitor.enabled }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "amm.fullname" . }}
+  labels: {{- include "amm.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels: {{- include "amm.selector" . | nindent 6 }}
+  endpoints:
+    - { port: http, path: /metrics, interval: {{ .Values.serviceMonitor.interval }} }
+{{- end }}
+{{- if .Values.istio.serviceEntries.enabled }}
+---
+apiVersion: networking.istio.io/v1
+kind: ServiceEntry
+metadata:
+  name: {{ include "amm.fullname" . }}-applovin
+  labels: {{- include "amm.labels" . | nindent 4 }}
+spec:
+  hosts: {{- toYaml .Values.istio.serviceEntries.hosts | nindent 4 }}
+  location: MESH_EXTERNAL
+  resolution: DNS
+  ports:
+    - { number: 443, name: https, protocol: TLS }
+{{- end }}

@@ -1,0 +1,46 @@
+{
+  "id": "revenue-top-countries",
+  "description": "Simple reporting question: picks revenue_report with country breakdown, no config or write tools.",
+  "prompt": "Which were our top 3 countries by estimated revenue yesterday (2026-11-04)? Give the revenue for each.",
+  "fixtures": [
+    {
+      "match": "r.applovin.com/maxReport",
+      "body": {
+        "code": 200,
+        "results": [
+          {
+            "day": "2026-11-04",
+            "country": "us",
+            "estimated_revenue": "5123.40",
+            "impressions": 402000
+          },
+          {
+            "day": "2026-11-04",
+            "country": "jp",
+            "estimated_revenue": "3310.05",
+            "impressions": 198000
+          },
+          {
+            "day": "2026-11-04",
+            "country": "de",
+            "estimated_revenue": "1210.77",
+            "impressions": 150300
+          },
+          {
+            "day": "2026-11-04",
+            "country": "br",
+            "estimated_revenue": "640.12",
+            "impressions": 310000
+          }
+        ],
+        "count": 4
+      }
+    }
+  ],
+  "expect": {
+    "must_call": ["revenue_report"],
+    "must_not_call": ["plan_change", "get_ad_unit"],
+    "max_tool_calls": 3,
+    "answer_includes": ["5,123|5123", "3,310|3310", "1,210|1210|1,211|1211"]
+  }
+}

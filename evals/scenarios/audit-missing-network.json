@@ -1,0 +1,185 @@
+{
+  "id": "audit-missing-network",
+  "description": "Audit finds a configured network with no impressions (Mintegral) and explains it; no writes.",
+  "prompt": "Audit ad unit au1 for the last 7 days and tell me what looks wrong.",
+  "fixtures": [
+    {
+      "match": "o.applovin.com/mediation/v1/ad_unit/au1",
+      "body": {
+        "id": "au1",
+        "name": "Rewarded iOS",
+        "platform": "ios",
+        "ad_format": "REWARD",
+        "package_name": "com.game",
+        "disabled": false,
+        "has_active_experiment": false,
+        "ad_network_settings": [
+          {
+            "ADMOB_BIDDING": {}
+          },
+          {
+            "UNITY_BIDDING": {}
+          },
+          {
+            "MINTEGRAL_BIDDING": {}
+          }
+        ],
+        "disabled_ad_network_settings": [],
+        "bid_floors": [
+          {
+            "country": "US",
+            "cpm": 12
+          },
+          {
+            "country": "JP",
+            "cpm": 9
+          }
+        ],
+        "frequency_capping_settings": {
+          "per_session": 4
+        },
+        "segments": []
+      }
+    },
+    {
+      "match": "r.applovin.com/maxReport",
+      "body": {
+        "code": 200,
+        "results": [
+          {
+            "day": "2026-10-29",
+            "max_ad_unit_id": "au1",
+            "network": "Google AdMob",
+            "attempts": 40000,
+            "responses": 30000,
+            "impressions": 24000,
+            "estimated_revenue": "288.40"
+          },
+          {
+            "day": "2026-10-29",
+            "max_ad_unit_id": "au1",
+            "network": "Unity Ads",
+            "attempts": 30000,
+            "responses": 15000,
+            "impressions": 11000,
+            "estimated_revenue": "99.10"
+          },
+          {
+            "day": "2026-10-30",
+            "max_ad_unit_id": "au1",
+            "network": "Google AdMob",
+            "attempts": 40000,
+            "responses": 30000,
+            "impressions": 24000,
+            "estimated_revenue": "288.40"
+          },
+          {
+            "day": "2026-10-30",
+            "max_ad_unit_id": "au1",
+            "network": "Unity Ads",
+            "attempts": 30000,
+            "responses": 15000,
+            "impressions": 11000,
+            "estimated_revenue": "99.10"
+          },
+          {
+            "day": "2026-10-31",
+            "max_ad_unit_id": "au1",
+            "network": "Google AdMob",
+            "attempts": 40000,
+            "responses": 30000,
+            "impressions": 24000,
+            "estimated_revenue": "288.40"
+          },
+          {
+            "day": "2026-10-31",
+            "max_ad_unit_id": "au1",
+            "network": "Unity Ads",
+            "attempts": 30000,
+            "responses": 15000,
+            "impressions": 11000,
+            "estimated_revenue": "99.10"
+          },
+          {
+            "day": "2026-11-01",
+            "max_ad_unit_id": "au1",
+            "network": "Google AdMob",
+            "attempts": 40000,
+            "responses": 30000,
+            "impressions": 24000,
+            "estimated_revenue": "288.40"
+          },
+          {
+            "day": "2026-11-01",
+            "max_ad_unit_id": "au1",
+            "network": "Unity Ads",
+            "attempts": 30000,
+            "responses": 15000,
+            "impressions": 11000,
+            "estimated_revenue": "99.10"
+          },
+          {
+            "day": "2026-11-02",
+            "max_ad_unit_id": "au1",
+            "network": "Google AdMob",
+            "attempts": 40000,
+            "responses": 30000,
+            "impressions": 24000,
+            "estimated_revenue": "288.40"
+          },
+          {
+            "day": "2026-11-02",
+            "max_ad_unit_id": "au1",
+            "network": "Unity Ads",
+            "attempts": 30000,
+            "responses": 15000,
+            "impressions": 11000,
+            "estimated_revenue": "99.10"
+          },
+          {
+            "day": "2026-11-03",
+            "max_ad_unit_id": "au1",
+            "network": "Google AdMob",
+            "attempts": 40000,
+            "responses": 30000,
+            "impressions": 24000,
+            "estimated_revenue": "288.40"
+          },
+          {
+            "day": "2026-11-03",
+            "max_ad_unit_id": "au1",
+            "network": "Unity Ads",
+            "attempts": 30000,
+            "responses": 15000,
+            "impressions": 11000,
+            "estimated_revenue": "99.10"
+          },
+          {
+            "day": "2026-11-04",
+            "max_ad_unit_id": "au1",
+            "network": "Google AdMob",
+            "attempts": 40000,
+            "responses": 30000,
+            "impressions": 24000,
+            "estimated_revenue": "288.40"
+          },
+          {
+            "day": "2026-11-04",
+            "max_ad_unit_id": "au1",
+            "network": "Unity Ads",
+            "attempts": 30000,
+            "responses": 15000,
+            "impressions": 11000,
+            "estimated_revenue": "99.10"
+          }
+        ]
+      }
+    }
+  ],
+  "expect": {
+    "must_call": ["audit_ad_unit"],
+    "must_not_call": ["plan_change", "plan_experiment"],
+    "max_tool_calls": 5,
+    "answer_includes": ["Mintegral"]
+  }
+}
